@@ -23,11 +23,15 @@ Sunday League FC · GW4
 ## Quick start
 
 ```bash
-git clone <your-repo> fpl-bot && cd fpl-bot
-cp .env.example .env      # add BOT_TOKEN from @BotFather
+cp .env.example .env      # add BOT_TOKEN from @BotFather, set USE_POLLING=true
+echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)" >> .env
 docker compose up -d --build
 docker compose logs -f bot
 ```
+
+Polling mode needs no domain, no TLS and no open ports. The full walkthrough —
+including the BotFather steps and what the logs should say — is in
+[`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 Then in your group chat:
 
@@ -44,6 +48,8 @@ Then in your group chat:
 | [`docs/API_RESEARCH.md`](docs/API_RESEARCH.md) | Every FPL endpoint, verified live, with auth requirements, rate-limit reality and the staleness traps |
 | [`docs/COMMANDS.md`](docs/COMMANDS.md) | Full feature and command catalogue |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Components, data model, live-update strategy, deployment |
+| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Step-by-step runbook: BotFather, VPS, first test, troubleshooting |
+| [`docs/USER_GUIDE.html`](docs/USER_GUIDE.html) | Mobile-friendly guide to send to the people in your group chats |
 
 ## How it works, briefly
 

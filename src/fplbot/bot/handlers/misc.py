@@ -56,6 +56,24 @@ async def cmd_help(message: Message) -> None:
     await message.answer(HELP)
 
 
+@router.message(F.migrate_to_chat_id)
+async def on_group_upgraded(message: Message) -> None:
+    """Carry the chat's leagues and settings across when Telegram upgrades a
+    group to a supergroup and hands it a brand new chat id."""
+    new_id = message.migrate_to_chat_id
+    if new_id is None:
+        return
+    async with session_scope() as s:
+        carried = await repo.migrate_chat(s, message.chat.id, new_id)
+    if carried:
+        await message.bot.send_message(
+            new_id,
+            f"This group was upgraded to a supergroup, so I moved your "
+            f"{carried} linked league{'s' if carried != 1 else ''} and settings "
+            "across. Nothing to redo.",
+        )
+
+
 @router.message(Command("settings"))
 async def cmd_settings(message: Message, chat_row) -> None:  # noqa: ANN001
     profile = getattr(chat_row, "alert_profile", "big-moments")

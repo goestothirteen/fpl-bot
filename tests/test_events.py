@@ -117,3 +117,55 @@ class TestQuietHours:
 
     def test_disabled_when_from_equals_to(self):
         assert Notifier.in_quiet_hours("UTC", 3, 3, self.at(3)) is False
+
+
+class TestDeadlineReminderTiming:
+    """FPL deadlines land ~01:30 Singapore time, so the reminder schedule has to
+    survive a quiet window that swallows two of the four slots."""
+
+    SGT = "Asia/Singapore"
+
+    def test_the_two_night_slots_are_suppressed(self):
+        from datetime import timedelta
+
+        from fplbot.scheduler.jobs import REMINDERS
+
+        # Deadline 17:30 UTC Friday == 01:30 SGT Saturday.
+        deadline = datetime(2026, 9, 4, 17, 30, tzinfo=UTC)
+        fired = []
+        for window, label in REMINDERS:
+            at = deadline - window
+            if not Notifier.in_quiet_hours(self.SGT, 1, 8, at):
+                fired.append(label)
+        assert "24h" not in fired      # 01:30 SGT the day before
+        assert "15m" not in fired      # 01:15 SGT
+        assert fired == ["6h", "2h"]   # 19:30 and 23:30 SGT — usable
+        assert timedelta(hours=6) in [w for w, _ in REMINDERS]
+
+    def test_someone_in_the_uk_gets_all_four(self):
+        deadline = datetime(2026, 9, 4, 17, 30, tzinfo=UTC)
+        fired = [
+            label
+            for window, label in __import__(
+                "fplbot.scheduler.jobs", fromlist=["REMINDERS"]
+            ).REMINDERS
+            if not Notifier.in_quiet_hours("Europe/London", 1, 8, deadline - window)
+        ]
+        assert fired == ["24h", "6h", "2h", "15m"]
+
+
+class TestSupergroupMigration:
+    """Telegram hands a group a brand-new chat id when it becomes a supergroup.
+    The handler must be wired to the right field, or every linked league
+    silently vanishes at that moment."""
+
+    def test_handler_is_registered_for_the_migration_field(self):
+        from fplbot.bot.handlers import misc
+
+        names = [h.callback.__name__ for h in misc.router.message.handlers]
+        assert "on_group_upgraded" in names
+
+    def test_repo_exposes_the_migration(self):
+        from fplbot.db import repo
+
+        assert callable(repo.migrate_chat)

@@ -37,6 +37,44 @@ async def get_chat(s: AsyncSession, chat_id: int) -> Chat | None:
     return await s.get(Chat, chat_id)
 
 
+async def migrate_chat(s: AsyncSession, old_id: int, new_id: int) -> int:
+    """Telegram rewrites a group's chat id when it becomes a supergroup, which
+    happens the first time you add enough members or make it public. Without
+    this, every linked league silently disappears at that moment and the bot
+    looks broken. Returns the number of leagues carried over.
+    """
+    old = await s.get(Chat, old_id)
+    if old is None:
+        return 0
+
+    await s.execute(
+        insert(Chat)
+        .values(
+            id=new_id, type="supergroup", title=old.title, timezone=old.timezone,
+            alert_profile=old.alert_profile, quiet_from=old.quiet_from,
+            quiet_to=old.quiet_to, settings=old.settings,
+        )
+        .on_conflict_do_nothing()
+    )
+
+    links = (
+        await s.execute(select(ChatLeague).where(ChatLeague.chat_id == old_id))
+    ).scalars().all()
+    for link in links:
+        await s.execute(
+            insert(ChatLeague)
+            .values(
+                chat_id=new_id, league_id=link.league_id,
+                is_default=link.is_default, added_by=link.added_by,
+            )
+            .on_conflict_do_nothing()
+        )
+
+    await s.execute(delete(ChatLeague).where(ChatLeague.chat_id == old_id))
+    await s.execute(delete(Chat).where(Chat.id == old_id))
+    return len(links)
+
+
 async def set_alert_profile(s: AsyncSession, chat_id: int, profile: str) -> None:
     await s.execute(update(Chat).where(Chat.id == chat_id).values(alert_profile=profile))
 

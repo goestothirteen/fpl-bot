@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="How to use the FPL mini-league bot in your group chat.">
+<title>FPL Bot Field Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  :root {
+    --paper:      #F4F6F1;
+    --card:       #FFFFFF;
+    --ink:        #161A17;
+    --ink-soft:   #56605A;
+    --ink-faint:  #8B948D;
+    --rule:       #D9DFD3;
+    --pitch:      #1B6E45;
+    --pitch-tint: #E5EFE8;
+    --brick:      #A8412A;
+    --shadow:     0 1px 2px rgba(22,26,23,.05), 0 8px 24px -16px rgba(22,26,23,.28);
+
+    --display: "Archivo", system-ui, sans-serif;
+    --body:    "Newsreader", Georgia, serif;
+    --mono:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0E1211;
+      --card:       #161B19;
+      --ink:        #E7EBE4;
+      --ink-soft:   #98A29A;
+      --ink-faint:  #6B7570;
+      --rule:       #262D29;
+      --pitch:      #56B583;
+      --pitch-tint: #15251C;
+      --brick:      #D8765B;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0E1211;
+    --card:       #161B19;
+    --ink:        #E7EBE4;
+    --ink-soft:   #98A29A;
+    --ink-faint:  #6B7570;
+    --rule:       #262D29;
+    --pitch:      #56B583;
+    --pitch-tint: #15251C;
+    --brick:      #D8765B;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap {
+    max-width: 34rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 5rem;
+  }
+
+  /* ── masthead ─────────────────────────────────────────────── */
+  .masthead { display: flex; flex-direction: column; gap: .9rem; }
+
+  .kick {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: .7rem;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--pitch);
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(2.1rem, 10vw, 2.9rem);
+    line-height: 1.02;
+    letter-spacing: -.025em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: 1.1rem;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  /* ── section scaffolding ──────────────────────────────────── */
+  section { margin-top: 3.25rem; }
+
+  .eyebrow {
+    display: flex;
+    align-items: baseline;
+    gap: .7rem;
+    border-top: 1px solid var(--rule);
+    padding-top: .7rem;
+    margin-bottom: 1.4rem;
+  }
+  .eyebrow .n {
+    font-family: var(--mono);
+    font-size: .72rem;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .eyebrow h2 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: .82rem;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    margin: 0;
+    color: var(--ink);
+  }
+
+  h3 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: -.005em;
+    margin: 2rem 0 .6rem;
+  }
+
+  p { margin: 0 0 1rem; text-wrap: pretty; }
+  p:last-child { margin-bottom: 0; }
+
+  a { color: var(--pitch); text-underline-offset: .18em; }
+  a:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid var(--pitch);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+
+  code, .cmd {
+    font-family: var(--mono);
+    font-size: .86em;
+    font-weight: 500;
+  }
+  p code, li code {
+    background: var(--pitch-tint);
+    color: var(--pitch);
+    padding: .1em .35em;
+    border-radius: 3px;
+  }
+
+  /* ── numbered setup steps ─────────────────────────────────── */
+  ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.5rem; counter-reset: s; }
+  ol.steps > li {
+    counter-increment: s;
+    display: grid;
+    grid-template-columns: 1.9rem 1fr;
+    gap: .9rem;
+  }
+  ol.steps > li::before {
+    content: counter(s);
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: .82rem;
+    line-height: 1.75rem;
+    text-align: center;
+    height: 1.75rem;
+    border-radius: 50%;
+    background: var(--pitch);
+    color: var(--card);
+    font-variant-numeric: tabular-nums;
+  }
+  ol.steps h3 { margin: .1rem 0 .35rem; font-size: 1rem; }
+  ol.steps p { font-size: .97rem; }
+
+  /* ── command list ─────────────────────────────────────────── */
+  dl.cmds { margin: 0; display: grid; gap: 0; }
+  dl.cmds > div {
+    display: grid;
+    gap: .15rem;
+    padding: .8rem 0 .8rem .9rem;
+    border-left: 2px solid var(--rule);
+    transition: border-color .15s ease;
+  }
+  dl.cmds > div:hover { border-left-color: var(--pitch); }
+  dl.cmds dt {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: .93rem;
+    color: var(--pitch);
+  }
+  dl.cmds dd {
+    margin: 0;
+    font-size: .97rem;
+    line-height: 1.5;
+    color: var(--ink-soft);
+  }
+  dl.cmds dd b { color: var(--ink); font-weight: 500; }
+
+  /* ── the sample bot message ───────────────────────────────── */
+  .screen {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: .95rem 1rem;
+    margin: 1.25rem 0;
+    overflow-x: auto;
+  }
+  .screen pre {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: .78rem;
+    line-height: 1.65;
+    font-variant-numeric: tabular-nums;
+    white-space: pre;
+    color: var(--ink);
+  }
+  .screen .title { color: var(--pitch); font-weight: 500; }
+  .screen .dim   { color: var(--ink-faint); }
+  .caption {
+    font-size: .85rem;
+    color: var(--ink-faint);
+    font-style: italic;
+    margin: -.6rem 0 0;
+  }
+
+  .btnrow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    margin-top: .8rem;
+    padding-top: .8rem;
+    border-top: 1px solid var(--rule);
+  }
+  .btnrow span {
+    font-family: var(--display);
+    font-size: .74rem;
+    font-weight: 500;
+    padding: .32rem .62rem;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    color: var(--ink-soft);
+    background: var(--paper);
+  }
+  .btnrow span.on { border-color: var(--pitch); color: var(--pitch); }
+
+  /* ── alert / volume tables ────────────────────────────────── */
+  .rows { display: grid; gap: 0; }
+  .rows > div {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: .5rem 1rem;
+    align-items: baseline;
+    padding: .7rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .rows > div:first-child { border-top: 1px solid var(--rule); }
+  .rows .what { font-size: .97rem; }
+  .rows .what b { font-weight: 500; }
+  .rows .freq {
+    font-family: var(--mono);
+    font-size: .76rem;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .level {
+    display: grid;
+    gap: .3rem;
+    padding: .95rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .level:first-of-type { border-top: 1px solid var(--rule); }
+  .level .head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .pill {
+    font-family: var(--mono);
+    font-size: .78rem;
+    font-weight: 500;
+    padding: .18rem .5rem;
+    border-radius: 5px;
+    background: var(--pitch-tint);
+    color: var(--pitch);
+  }
+  .level .count {
+    font-family: var(--mono);
+    font-size: .74rem;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .level p { font-size: .95rem; color: var(--ink-soft); margin: 0; }
+
+  .note {
+    background: var(--pitch-tint);
+    border-radius: 8px;
+    padding: .9rem 1rem;
+    font-size: .95rem;
+    margin: 1.4rem 0 0;
+  }
+  .note b { font-weight: 500; }
+
+  /* ── faq ──────────────────────────────────────────────────── */
+  details {
+    border-bottom: 1px solid var(--rule);
+    padding: .2rem 0;
+  }
+  details:first-of-type { border-top: 1px solid var(--rule); }
+  summary {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: .98rem;
+    padding: .85rem 1.6rem .85rem 0;
+    cursor: pointer;
+    list-style: none;
+    position: relative;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::after {
+    content: "+";
+    position: absolute;
+    right: .1rem;
+    top: .78rem;
+    font-family: var(--mono);
+    color: var(--pitch);
+    font-size: 1.05rem;
+  }
+  details[open] summary::after { content: "\2013"; }
+  details p {
+    font-size: .96rem;
+    color: var(--ink-soft);
+    margin: 0 0 .95rem;
+    padding-right: .5rem;
+  }
+
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--rule);
+    font-size: .85rem;
+    color: var(--ink-faint);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="kick">Mini-league bot · Field guide</div>
+    <h1>Stop opening ten team pages</h1>
+    <p class="standfirst">There's a bot in this group chat now. It watches our
+      mini-league during matches and answers with the whole table in one message
+      — live, while the FPL app is still hours behind.</p>
+  </header>
+
+  <section>
+    <div class="eyebrow"><span class="n">01</span><h2>Get set up</h2></div>
+
+    <ol class="steps">
+      <li>
+        <div>
+          <h3>Nothing, if you just want to read</h3>
+          <p>Every command works for everyone the moment the bot joins. You only
+            need the next two steps if you want the bot to know which team is
+            yours.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>Find your team ID</h3>
+          <p>Open the FPL site or app, go to <b>Points</b> or <b>My Team</b>, and
+            look at the web address. It contains
+            <code>/entry/1234567/</code> — that number is you.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>Claim it in the chat</h3>
+          <p>Send <code>/me 1234567</code>. Now the bot can tag you by name when
+            your players score, and <code>/diff</code> knows who to compare you
+            against.</p>
+        </div>
+      </li>
+    </ol>
+
+    <div class="note">
+      <b>It never asks for your FPL password, and it can't see your team before
+      the deadline.</b> Everything it reads is the public data anyone can see on
+      the league page. Unsubmitted teams are hidden by FPL itself, so the bot
+      literally cannot look.
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">02</span><h2>The one command to remember</h2></div>
+
+    <p>Send <code>/live</code> during a gameweek and you get this:</p>
+
+    <div class="screen">
+<pre><span class="title">Sunday League FC · GW4</span>
+
+ #  Team             GW    Tot   ⏳
+ ─────────────────────────────────
+ 1  Ten Hag's Lads   62    284    2
+ 2  Sonny Delight    58    281    3
+ 3  Klopp Fiction TC 57↑   279    1
+ 4  Mark's XI        41*   266    4
+ 5  Wei's Warriors   38    259    0
+
+<span class="dim">* after hit · ↑ auto-sub projected · live</span></pre>
+      <div class="btnrow">
+        <span class="on">• Table</span><span>Left</span><span>Captains</span>
+        <span>Diffs</span><span>Bench</span><span>🔄 Refresh</span>
+      </div>
+    </div>
+    <p class="caption">⏳ is players you still have to come. TC / BB / WC / FH
+      mark an active chip.</p>
+
+    <p>Two things worth knowing about that message. It <b>updates itself</b> —
+      during matches it quietly rewrites in place every 45 seconds instead of
+      posting a new table each time. And the row of <b>buttons</b> under it
+      switches views, so you can check benches and captains without typing
+      anything.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">03</span><h2>While the football is on</h2></div>
+
+    <dl class="cmds">
+      <div><dt>/live</dt><dd>The live table. Points, season totals, players left.</dd></div>
+      <div><dt>/left</dt><dd>Who still has bullets — split into <b>on the pitch now</b> and <b>yet to kick off</b>.</dd></div>
+      <div><dt>/captains</dt><dd>Who captained whom, and what the armband has actually returned.</dd></div>
+      <div><dt>/bench</dt><dd>Points rotting on people's benches. Reliably the funniest message of the weekend.</dd></div>
+      <div><dt>/diff</dt><dd>The rare picks — players only one or two of us own. That's where the gameweek is won.</dd></div>
+      <div><dt>/diff wei</dt><dd>Head-to-head. Exactly which players separate you and one specific person, and who's winning that battle.</dd></div>
+      <div><dt>/eo haaland</dt><dd>Effective ownership. If nine of us own him and six captain him, a haul doesn't help you — a blank ruins everyone else. This is the number that tells you whether to sweat.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">04</span><h2>Any time</h2></div>
+
+    <dl class="cmds">
+      <div><dt>/deadline</dt><dd>Countdown in local time. It also nags the group before every deadline.</dd></div>
+      <div><dt>/chips</dt><dd>Who's burned what. Chips reset at GW20 this season, so this only shows the current half.</dd></div>
+      <div><dt>/transfers</dt><dd>Everyone's moves since the last deadline.</dd></div>
+      <div><dt>/news</dt><dd>Injury and availability flags — filtered to <b>only players someone here owns</b>, so it isn't noise.</dd></div>
+      <div><dt>/form</dt><dd>Last four gameweeks. Separates who's genuinely hot from who banked one big score in August.</dd></div>
+      <div><dt>/template</dt><dd>The players more than half of us own, and who's brave enough to ignore them.</dd></div>
+      <div><dt>/player saka</dt><dd>Form, xG, price, fixtures — and who in this league owns him.</dd></div>
+      <div><dt>/fixtures ARS</dt><dd>Next five games with difficulty colours.</dd></div>
+      <div><dt>/awards</dt><dd>Manager of the Week, Bench Warmer, Captain Disaster, Best Differential.</dd></div>
+      <div><dt>/help</dt><dd>All of the above, in the chat.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">05</span><h2>What it posts on its own</h2></div>
+
+    <p>You don't have to ask for these. The right-hand column is roughly how
+      often each one fires in a normal gameweek.</p>
+
+    <div class="rows">
+      <div>
+        <div class="what"><b>Goal by a player we own</b><br>
+          Names the owners, and flags it if someone captained him.</div>
+        <div class="freq">~13 ×</div>
+      </div>
+      <div>
+        <div class="what"><b>Assist by a player we own</b></div>
+        <div class="freq">~10 ×</div>
+      </div>
+      <div>
+        <div class="what"><b>Red card</b><br>Straight away — it changes plans.</div>
+        <div class="freq">0–2 ×</div>
+      </div>
+      <div>
+        <div class="what"><b>Lead change</b><br>"👑 Wei takes the lead, +3"</div>
+        <div class="freq">3–8 ×</div>
+      </div>
+      <div>
+        <div class="what"><b>Deadline reminders</b></div>
+        <div class="freq">2–3 ×</div>
+      </div>
+      <div>
+        <div class="what"><b>Full-time table</b><br>Then an updated one once bonus points confirm.</div>
+        <div class="freq">2 ×</div>
+      </div>
+      <div>
+        <div class="what"><b>Gameweek wrap-up + awards</b></div>
+        <div class="freq">1 ×</div>
+      </div>
+      <div>
+        <div class="what"><b>Price changes</b><br>Only for players someone here owns.</div>
+        <div class="freq">2–4 ×</div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>It batches.</b> Three goals in ten minutes arrive as one message with
+      three lines, not nine separate pings. Nothing is sent more than once a
+      minute.
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">06</span><h2>Turning the volume down</h2></div>
+
+    <p>Send <code>/settings</code> and pick a level. It applies to the whole
+      group, so agree on it between you.</p>
+
+    <div class="level">
+      <div class="head"><span class="pill">all</span>
+        <span class="count">≈ 25–30 messages a gameweek</span></div>
+      <p>Every goal, assist, booking and red card involving a player we own.
+        Best if the chat exists mainly for the football.</p>
+    </div>
+    <div class="level">
+      <div class="head"><span class="pill">big-moments</span>
+        <span class="count">≈ 12–18 · the default</span></div>
+      <p>Goals, red cards, lead changes, deadlines and the full-time results.
+        Skips assists and bookings.</p>
+    </div>
+    <div class="level">
+      <div class="head"><span class="pill">digest-only</span>
+        <span class="count">≈ 4–5</span></div>
+      <p>Nothing during matches. Deadline reminders, the full-time table and
+        the wrap-up, and that's it.</p>
+    </div>
+    <div class="level">
+      <div class="head"><span class="pill">off</span>
+        <span class="count">0</span></div>
+      <p>Completely silent. Every command still works when someone asks.</p>
+    </div>
+
+    <h3>Quiet hours</h3>
+    <p>Set to <b>1am–8am</b> by default. Evening kick-offs in England finish
+      around 6am here, and nobody wants that. Anything that happens in the
+      window is held and delivered as one summary in the morning.</p>
+    <p>Deadline reminders follow the same rule, which is why you'll usually get
+      them around <b>7:30pm and 11:30pm</b> the night before rather than at
+      1:15am, fifteen minutes before the actual deadline.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">07</span><h2>Questions</h2></div>
+
+    <details>
+      <summary>Do I have to give it my FPL login?</summary>
+      <p>No, and it will never ask. Everything it uses is public data that
+        anyone can pull from the league page. If something ever asks you for
+        your FPL password, it isn't this bot.</p>
+    </details>
+
+    <details>
+      <summary>Can it see my team before the deadline?</summary>
+      <p>No. FPL hides unsubmitted teams from everyone, so the bot has no way to
+        look even if it wanted to. Picks only become visible after the deadline
+        passes, which is the same moment you can see everyone else's.</p>
+    </details>
+
+    <details>
+      <summary>Why doesn't this match the table in the FPL app?</summary>
+      <p>Because the FPL app's mini-league table doesn't update live — it
+        refreshes in batches and can be several hours behind during a match day.
+        The bot adds the scores up itself from live match data, so it's current
+        to the minute. When they disagree mid-Saturday, the bot is the one
+        that's right.</p>
+    </details>
+
+    <details>
+      <summary>What does the little ↑ arrow mean?</summary>
+      <p>An automatic substitution the bot expects to happen. If one of your
+        starters played zero minutes and his match is over, FPL will eventually
+        sub in a bench player — but it only does that once every game in the
+        gameweek has finished. The bot shows you the projected final score now
+        and marks it with ↑ so you know it isn't official yet.</p>
+    </details>
+
+    <details>
+      <summary>It's too noisy. / It's too quiet.</summary>
+      <p>Send <code>/settings</code>. Four levels, from every booking to
+        complete silence. Changing it affects everyone in this chat, not just
+        you.</p>
+    </details>
+
+    <details>
+      <summary>Can the same bot run in my other FPL group?</summary>
+      <p>Yes. Add it to that chat and run <code>/link</code> with that league's
+        ID. Each group gets its own league, its own volume setting and its own
+        quiet hours — they don't interfere with each other. One chat can even
+        follow several leagues at once and switch between them with
+        <code>/leagues</code>.</p>
+    </details>
+
+    <details>
+      <summary>Where do I find the league ID?</summary>
+      <p>Open the mini-league on the FPL site. The address contains
+        <code>/leagues/123456/standings/</code> — that number. Whoever sets the
+        bot up in a chat runs <code>/link 123456</code> once and everyone else
+        is covered.</p>
+    </details>
+
+    <details>
+      <summary>Nothing happened when I sent a command.</summary>
+      <p>Two usual causes. Either no league is linked to the chat yet — someone
+        needs to run <code>/link</code> first — or you sent several commands in
+        a few seconds and got rate-limited, which sorts itself out after ten
+        seconds. If a gameweek hasn't started, <code>/live</code> will show the
+        last completed one.</p>
+    </details>
+  </section>
+
+  <footer>
+    Reads public Fantasy Premier League data only. Not affiliated with the
+    Premier League or FPL.
+  </footer>
+
+</div>
+
+</body>
+</html>

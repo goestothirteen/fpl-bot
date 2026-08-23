@@ -9,13 +9,23 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from ..bot.formatting import esc, render_deadline
 from ..db import repo
 from ..db.session import session_scope
+from ..live.notifier import Notifier
 from ..logging_conf import get_logger
 from ..services.live import LiveEngine
 from ..services.parsing import parse_game_state, parse_players
 
 log = get_logger(__name__)
 
-REMINDERS = [(timedelta(hours=24), "24h"), (timedelta(hours=2), "2h"), (timedelta(minutes=15), "15m")]
+# FPL deadlines are usually 18:30 UK time, which is 01:30 in Singapore. A naive
+# 24h/2h/15m schedule would put two of the three reminders in the middle of the
+# night, so reminders that land inside a chat's quiet hours are skipped and the
+# 6h slot exists to guarantee at least one lands in waking hours.
+REMINDERS = [
+    (timedelta(hours=24), "24h"),
+    (timedelta(hours=6), "6h"),
+    (timedelta(hours=2), "2h"),
+    (timedelta(minutes=15), "15m"),
+]
 
 
 async def deadline_reminders(engine: LiveEngine, bot: Bot) -> None:
@@ -32,11 +42,15 @@ async def deadline_reminders(engine: LiveEngine, bot: Bot) -> None:
                 league_ids = await repo.all_active_leagues(s)
                 chats = {c.id: c for lid in league_ids for c in await repo.chats_for_league(s, lid)}
             for chat in chats.values():
+                if Notifier.in_quiet_hours(chat.timezone, chat.quiet_from, chat.quiet_to):
+                    continue
                 key = f"gw{state.next_event}:deadline:{label}"
                 async with session_scope() as s:
                     fresh = await repo.claim_alert(s, chat.id, key)
                 if fresh:
-                    await bot.send_message(chat.id, render_deadline(state.next_deadline, chat.timezone))
+                    await bot.send_message(
+                        chat.id, render_deadline(state.next_deadline, chat.timezone)
+                    )
             break
 
 
@@ -73,6 +87,12 @@ async def price_watch(engine: LiveEngine, bot: Bot) -> None:
         async with session_scope() as s:
             chats = await repo.chats_for_league(s, league_id)
         for chat in chats:
+            # Price moves are ambient interest, not news — the quietest two
+            # profiles opt out entirely.
+            if chat.alert_profile in ("digest-only", "off"):
+                continue
+            if Notifier.in_quiet_hours(chat.timezone, chat.quiet_from, chat.quiet_to):
+                continue
             key = f"prices:{datetime.now(UTC):%Y-%m-%d}:{league_id}"
             async with session_scope() as s:
                 fresh = await repo.claim_alert(s, chat.id, key)

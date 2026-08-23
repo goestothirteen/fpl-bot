@@ -100,7 +100,9 @@ class LivePoller:
         table = await self.engine.build_table(league_id, event)
         league_events = attribute(raw_events, table, names)
 
-        lead = detect_lead_change(table, self._leaders.get(league_id))
+        lead = detect_lead_change(
+            table, self._leaders.get(league_id), raw_events, names
+        )
         if lead:
             league_events.append(lead)
         ranked = table.ranked()

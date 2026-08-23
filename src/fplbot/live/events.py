@@ -6,9 +6,10 @@ separation is what makes the alert engine testable without a Telegram token.
 """
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass, field
 
-from ..services.models import LiveTable, PlayerLive
+from ..services.models import LiveTable, ManagerLive, PlayerLive
 
 # (stat name, emoji, template, importance) — importance gates alert profiles
 WATCHED = [
@@ -18,6 +19,24 @@ WATCHED = [
     ("yellow_cards", "🟨", "{player} booked", 1),
     ("saves", None, None, 0),  # tracked for state, never alerted individually
 ]
+
+VERB = {
+    "goals": "scores",
+    "assists": "assists",
+    "red_cards": "is sent off",
+    "yellow_cards": "is booked",
+}
+
+# Provisional bonus swings a point or two and flips the lead back and forth all
+# evening. Below this margin an unconfirmed lead change is noise, not news.
+PROVISIONAL_LEAD_MARGIN = 3
+
+
+def _esc(text: str) -> str:
+    """Team names are user-chosen and land inside HTML — an unescaped & or <
+    makes Telegram reject the whole message, so the alert silently never
+    arrives."""
+    return html.escape(str(text), quote=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,16 +123,11 @@ def attribute(
         if not holders:
             continue
         name = player_names.get(ev.element, str(ev.element))
-        names = [n for n, _ in holders]
-        caps = [n for n, c in holders if c]
+        names = [_esc(n) for n, _ in holders]
+        caps = [_esc(n) for n, c in holders if c]
         who = ", ".join(names[:4]) + (f" +{len(names) - 4}" if len(names) > 4 else "")
-        verb = {
-            "goals": "scores",
-            "assists": "assists",
-            "red_cards": "is sent off",
-            "yellow_cards": "is booked",
-        }[ev.kind]
-        text = f"{ev.emoji} <b>{name}</b> {verb} — {who}"
+        verb = VERB[ev.kind]
+        text = f"{ev.emoji} <b>{_esc(name)}</b> {verb} — now {ev.new_points} pts\n   {who}"
         if caps:
             text += f"\n   ©️ captained by {', '.join(caps)}"
         out.append(
@@ -131,18 +145,64 @@ def attribute(
     return out
 
 
+def _lead_cause(
+    leader: ManagerLive,
+    events: list[PlayerEvent],
+    player_names: dict[int, str],
+) -> str:
+    """What the new leader's players just did, if anything did."""
+    owned = {p.element for p in leader.picks if p.effective_multiplier}
+    bits = [
+        f"{ev.emoji} {_esc(player_names.get(ev.element, str(ev.element)))} {VERB[ev.kind]}"
+        for ev in events
+        if ev.element in owned and ev.kind in VERB
+    ]
+    return " · ".join(dict.fromkeys(bits))   # de-duplicated, order preserved
+
+
 def detect_lead_change(
-    table: LiveTable, previous_leader: int | None
+    table: LiveTable,
+    previous_leader: int | None,
+    events: list[PlayerEvent] | None = None,
+    player_names: dict[int, str] | None = None,
 ) -> LeagueEvent | None:
+    """Announce a new leader, and say why.
+
+    "takes the lead, +1" told nobody anything: it named no league, no
+    gameweek, no displaced rival, and gave no cause — and +1 read as a point
+    gained rather than the margin. Worse, provisional bonus flipped it back
+    and forth every few minutes with nothing visible to explain it.
+    """
     ranked = table.ranked()
     if not ranked:
         return None
     leader = ranked[0]
     if previous_leader is None or leader.entry_id == previous_leader:
         return None
-    margin = leader.live_total - (ranked[1].live_total if len(ranked) > 1 else 0)
+
+    runner = ranked[1] if len(ranked) > 1 else None
+    margin = leader.live_total - (runner.live_total if runner else 0)
+    if not table.bonus_confirmed and margin < PROVISIONAL_LEAD_MARGIN:
+        return None
+
+    who = f"<b>{_esc(leader.team_name)}</b>"
+    if leader.manager_name and leader.manager_name != "?":
+        who += f" ({_esc(leader.manager_name)})"
+
+    lines = [
+        f"👑 <b>New leader</b> · {_esc(table.league_name)} · GW{table.event}",
+        f"{who} — {leader.live_total} pts",
+    ]
+    if runner:
+        ahead = "level with" if not margin else f"{margin} ahead of"
+        lines.append(f"Now {ahead} <b>{_esc(runner.team_name)}</b>")
+    if cause := _lead_cause(leader, events or [], player_names or {}):
+        lines.append(cause)
+    elif not table.bonus_confirmed:
+        lines.append("↑ bonus points shifted")
+
     return LeagueEvent(
-        text=f"👑 <b>{leader.team_name}</b> takes the lead, +{margin}",
+        text="\n".join(lines),
         key=f"gw{table.event}:lead:{leader.entry_id}:{leader.live_total}",
         importance=3,
     )

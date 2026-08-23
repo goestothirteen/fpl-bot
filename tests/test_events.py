@@ -81,7 +81,44 @@ def test_lead_change_only_fires_on_an_actual_change():
     t = LiveTable(event=4, league_id=1, league_name="L", phase=GamePhase.LIVE, rows=rows)
     assert detect_lead_change(t, previous_leader=1) is None
     ev = detect_lead_change(t, previous_leader=2)
-    assert ev is not None and "A" in ev.text and "+10" in ev.text
+    assert ev is not None
+    # Names the league, the gameweek, the displaced rival and the margin —
+    # "takes the lead, +10" named none of them.
+    assert "A" in ev.text and "L" in ev.text and "GW4" in ev.text
+    assert "10 ahead of" in ev.text and "B" in ev.text
+
+
+def test_lead_change_says_what_caused_it():
+    rows = [mgr(1, "A", [7], total=100), mgr(2, "B", [8], total=90)]
+    rows[0].gw_points, rows[1].gw_points = 0, 0
+    t = LiveTable(event=4, league_id=1, league_name="L", phase=GamePhase.LIVE, rows=rows)
+    before = {7: {"goals": 0, "assists": 0, "red_cards": 0, "yellow_cards": 0}}
+    now = {7: live(7, points=10)}
+    now[7].goals = 1
+    ev = detect_lead_change(t, 2, diff_live(before, now), {7: "Saka"})
+    assert ev is not None and "Saka scores" in ev.text
+
+
+def test_provisional_bonus_does_not_flip_the_lead_on_a_narrow_margin():
+    """Bonus is recomputed every poll and swung the lead back and forth all
+    evening, posting a crown alert each time with nothing to explain it."""
+    rows = [mgr(1, "A", [1], total=100), mgr(2, "B", [2], total=99)]
+    rows[0].gw_points, rows[1].gw_points = 0, 0
+    t = LiveTable(event=4, league_id=1, league_name="L", phase=GamePhase.LIVE,
+                  rows=rows, bonus_confirmed=False)
+    assert detect_lead_change(t, previous_leader=2) is None
+    # Once bonus is settled, the same one-point lead is worth announcing.
+    t.bonus_confirmed = True
+    assert detect_lead_change(t, previous_leader=2) is not None
+
+
+def test_team_names_are_escaped():
+    rows = [mgr(1, "Salah & Pepper <b>", [1], total=100), mgr(2, "B", [2], total=90)]
+    rows[0].gw_points, rows[1].gw_points = 0, 0
+    t = LiveTable(event=4, league_id=1, league_name="L", phase=GamePhase.LIVE, rows=rows)
+    ev = detect_lead_change(t, previous_leader=2)
+    # An unescaped & or < makes Telegram reject the message outright.
+    assert ev is not None and "&amp;" in ev.text and "&lt;b&gt;" in ev.text
 
 
 def test_snapshot_roundtrip():

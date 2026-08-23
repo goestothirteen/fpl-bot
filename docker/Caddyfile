@@ -1,0 +1,16 @@
+{$DOMAIN} {
+	encode gzip
+
+	# Telegram only ever calls the webhook path; everything else 404s.
+	handle /webhook/* {
+		reverse_proxy bot:8080
+	}
+
+	handle /healthz {
+		reverse_proxy bot:8080
+	}
+
+	handle {
+		respond "not here" 404
+	}
+}

@@ -1,0 +1,71 @@
+name: fpl-bot
+
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+asyncpg://fpl:${POSTGRES_PASSWORD:-fpl}@db:5432/fpl
+      REDIS_URL: redis://redis:6379/0
+    expose:
+      - "8080"
+    networks: [internal, web]
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fpl
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fpl}
+      POSTGRES_DB: fpl
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fpl"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Cache only — losing it costs one cold fetch, so no persistence needed.
+    command: redis-server --save "" --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks: [internal]
+
+  # Only needed for webhook mode. Start it with:
+  #   docker compose --profile webhook up -d
+  # In polling mode (the default, and the easiest way to test) you need no
+  # domain, no TLS and no open ports at all.
+  caddy:
+    profiles: [webhook]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN:-fpl.example.com}
+    depends_on: [bot]
+    networks: [web]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+  web:

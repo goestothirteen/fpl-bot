@@ -1,0 +1,9 @@
+.git
+.venv
+__pycache__
+.env
+backups/
+caddy_data/
+caddy_config/
+docs/
+tests/

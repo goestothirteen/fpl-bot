@@ -38,10 +38,14 @@ async def cmd_template(message: Message, engine: LiveEngine, default_league) -> 
     core, overlap = analysis.template(table)
 
     names = ", ".join(players[e].web_name for e in core if e in players) or "nothing — you're all different"
-    brave = "\n".join(f"{clip(n, 16):<16} {c:>2}/{len(core)}" for n, c in overlap[:12])
+    brave = "\n\n".join(
+        f"<b>{esc(clip(n, 28))}</b> — <b>{c}</b>/{len(core)}\n"
+        f"     {'template-proof' if c <= len(core) // 3 else 'runs with the pack'}"
+        for n, c in overlap[:12]
+    )
     await message.answer(
-        f"<b>League template</b> — owned by &gt;50%\n{esc(names)}\n\n"
-        f"<b>Bravest first</b>\n<pre>{esc(brave)}</pre>"
+        f"🧬 <b>League template</b> · owned by &gt;50%\n{esc(names)}\n\n"
+        f"<b>Bravest first</b> · fewest template picks\n\n{brave}"
     )
 
 
@@ -90,8 +94,14 @@ async def cmd_form(message: Message, engine: LiveEngine, default_league) -> None
         rows.append((m.team_name, pts, len(recent)))
     rows.sort(key=lambda t: -t[1])
 
-    lines = [f"{clip(n, 16):<16} {p:>4}  ({g} GW)" for n, p, g in rows]
+    medals = {0: "🥇", 1: "🥈", 2: "🥉"}
+    blocks = [
+        f"{medals.get(i, f'<b>{i + 1}</b>')} <b>{esc(clip(n, 28))}</b> — <b>{p}</b>\n"
+        f"     over {g} gameweek{'s' if g != 1 else ''} · {p / g:.1f} per GW"
+        if g else f"{medals.get(i, f'<b>{i + 1}</b>')} <b>{esc(clip(n, 28))}</b> — <b>{p}</b>"
+        for i, (n, p, g) in enumerate(rows)
+    ]
     await message.answer(
-        f"<b>Form</b> — last {min(4, event)} gameweeks, net of hits\n"
-        f"<pre>{esc(chr(10).join(lines))}</pre>"
+        f"📈 <b>Form</b> · last {min(4, event)} gameweeks, net of hits\n\n"
+        + "\n\n".join(blocks)
     )

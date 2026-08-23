@@ -20,15 +20,17 @@ from ..formatting import (
     render_bench,
     render_captains,
     render_differentials,
-    render_live_table,
-    render_remaining,
+    render_edge,
+    render_live_cards,
+    render_remaining_detail,
+    render_season_table,
 )
 from ..keyboards import live_views
 
 router = Router(name="live")
 log = get_logger(__name__)
 
-VIEWS = ("live", "left", "caps", "diff", "bench")
+VIEWS = ("live", "season", "left", "edge", "caps", "diff", "bench")
 
 
 async def _context(engine: LiveEngine, league_id: int, event: int):
@@ -40,15 +42,19 @@ async def _context(engine: LiveEngine, league_id: int, event: int):
 
 
 def _render(view: str, table: LiveTable, players, live) -> str:  # noqa: ANN001
+    if view == "season":
+        return render_season_table(table)
     if view == "left":
-        return render_remaining(table)
+        return render_remaining_detail(table, players)
+    if view == "edge":
+        return render_edge(table, players)
     if view == "caps":
         return render_captains(analysis.captain_spread(table, live), players)
     if view == "diff":
         return render_differentials(analysis.differentials(table, live), players)
     if view == "bench":
         return render_bench(analysis.bench_disasters(table))
-    return render_live_table(table)
+    return render_live_cards(table, players, live)
 
 
 async def _resolve_league(message: Message, default_league, command_arg: str | None):  # noqa: ANN001
@@ -93,6 +99,22 @@ async def cmd_live(message: Message, command: CommandObject, engine: LiveEngine,
     league_id = await _resolve_league(message, default_league, command.args)
     if league_id:
         await _send_view(message, engine, league_id, "live")
+
+
+@router.message(Command("season", "total"))
+async def cmd_season(message: Message, command: CommandObject, engine: LiveEngine,
+                     default_league) -> None:  # noqa: ANN001
+    league_id = await _resolve_league(message, default_league, command.args)
+    if league_id:
+        await _send_view(message, engine, league_id, "season")
+
+
+@router.message(Command("edge", "swing"))
+async def cmd_edge(message: Message, command: CommandObject, engine: LiveEngine,
+                   default_league) -> None:  # noqa: ANN001
+    league_id = await _resolve_league(message, default_league, command.args)
+    if league_id:
+        await _send_view(message, engine, league_id, "edge")
 
 
 @router.message(Command("left"))
@@ -158,14 +180,15 @@ async def cmd_diff(message: Message, command: CommandObject, engine: LiveEngine,
 
     def fmt(items):  # noqa: ANN001, ANN202
         return "\n".join(
-            f"{d:>+4} {players[el].web_name}" for el, d in items[:8] if el in players
-        ) or "—"
+            f"   <b>{d:+d}</b> · {esc(players[el].web_name)}"
+            for el, d in items[:8] if el in players
+        ) or "   —"
 
     await note.edit_text(
-        f"<b>{esc(mine.team_name)}</b> vs <b>{esc(theirs.team_name)}</b> · GW{event}\n"
+        f"⚔️ <b>{esc(mine.team_name)}</b> vs <b>{esc(theirs.team_name)}</b> · GW{event}\n"
         f"Swing so far: <b>{swing:+d}</b>\n\n"
-        f"<b>Yours</b>\n<pre>{esc(fmt(only_a))}</pre>\n"
-        f"<b>Theirs</b>\n<pre>{esc(fmt(only_b))}</pre>"
+        f"<b>Only yours</b>\n{fmt(only_a)}\n\n"
+        f"<b>Only theirs</b>\n{fmt(only_b)}"
     )
 
 
@@ -186,14 +209,14 @@ async def cmd_eo(message: Message, command: CommandObject, engine: LiveEngine,
             o for o in rows
             if o.element in players and query in players[o.element].web_name.lower()
         ]
-    lines = [
-        f"{o.effective_ownership:>5.0f}% {players[o.element].web_name[:14]:<14}"
-        f" {live[o.element].effective_points if o.element in live else 0:>3}"
+    blocks = [
+        f"<b>{esc(players[o.element].web_name)}</b> — <b>{o.effective_ownership:.0f}%</b>\n"
+        f"     {live[o.element].effective_points if o.element in live else 0} pts"
         for o in rows[:15] if o.element in players
     ]
     await message.answer(
-        "<b>Effective ownership</b> (ownership + captaincy)\n"
-        f"<pre>{esc(chr(10).join(lines)) or '—'}</pre>"
+        "📊 <b>Effective ownership</b> · ownership + captaincy\n\n"
+        + ("\n\n".join(blocks) or "—")
     )
 
 

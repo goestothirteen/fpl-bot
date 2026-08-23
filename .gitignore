@@ -14,3 +14,6 @@ caddy_config/
 dist/
 build/
 *.egg-info/
+
+# local staging area for code drops, not part of the project
+_to_delete/

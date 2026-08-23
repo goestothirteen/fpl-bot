@@ -158,7 +158,7 @@ class LivePoller:
     async def _finalise(self, event: int, league_ids: list[int]) -> None:
         """Persist the confirmed table once FPL says data_checked, then post the
         wrap-up exactly once per chat (the alert_log key makes that safe)."""
-        from ..bot.formatting import render_awards, render_live_table
+        from ..bot.formatting import render_awards, render_live_cards
         from ..services.analysis import awards
         from ..services.parsing import parse_players
 
@@ -187,7 +187,7 @@ class LivePoller:
 
             text = (
                 f"🏁 <b>Gameweek {event} is final</b>\n\n"
-                + render_live_table(table)
+                + render_live_cards(table)
                 + "\n\n"
                 + render_awards(awards(table, players, live))
             )

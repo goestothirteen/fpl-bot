@@ -148,10 +148,21 @@ class ManagerLive:
     played: int = 0
     predicted_subs: list[tuple[int, int]] = field(default_factory=list)  # (out, in)
     has_provisional_bonus: bool = False
+    chip_points: int = 0          # points attributable to an active chip
 
     @property
     def net_points(self) -> int:
         return self.gw_points - self.transfer_cost
+
+    @property
+    def base_points(self) -> int:
+        """Net points with the chip's contribution stripped out.
+
+        A bench boost folds four extra players into the same total, so the raw
+        score can't be compared against a manager who didn't play one. This is
+        the number to settle a side-bet on.
+        """
+        return self.net_points - self.chip_points
 
     @property
     def live_total(self) -> int:
@@ -171,9 +182,17 @@ class LiveTable:
     phase: GamePhase
     data_age_seconds: float = 0.0
     bonus_confirmed: bool = True
+    team_state: dict[int, FixtureState] = field(default_factory=dict)
 
     def ranked(self) -> list[ManagerLive]:
+        """Season standings — cumulative total first."""
         return sorted(self.rows, key=lambda m: (-m.live_total, -m.net_points, m.team_name))
+
+    def ranked_gw(self) -> list[ManagerLive]:
+        """This gameweek only. `/live` shows GW points, so it must order by them
+        too — ordering by season total while displaying GW points put the rows
+        in an order the numbers didn't explain."""
+        return sorted(self.rows, key=lambda m: (-m.net_points, -m.live_total, m.team_name))
 
 
 @dataclass(frozen=True, slots=True)

@@ -25,8 +25,10 @@ from .middlewares import ChatContextMiddleware, ThrottleMiddleware
 log = get_logger(__name__)
 
 COMMANDS = [
-    ("live", "Live league table"),
-    ("left", "Who still has players to play"),
+    ("live", "This gameweek's live table"),
+    ("season", "Full season standings"),
+    ("left", "Who each team is still waiting on"),
+    ("edge", "Unique players you still have to play"),
     ("diff", "Differentials, or head-to-head"),
     ("captains", "Captain spread and returns"),
     ("bench", "Points left on benches"),

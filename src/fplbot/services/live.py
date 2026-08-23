@@ -184,6 +184,7 @@ class LiveEngine:
             phase=info.phase,
             data_age_seconds=age,
             bonus_confirmed=not provisional,
+            team_state=team_state,
         )
 
     async def resolve_event(self) -> int:
@@ -252,6 +253,7 @@ def build_manager_row(
 
     gw_points = 0
     bench_points = 0
+    chip_points = 0
     to_play = in_play = played = 0
     captain_element = None
     captain_points = 0
@@ -265,6 +267,12 @@ def build_manager_row(
             has_prov = True
         mult = pick.effective_multiplier
         gw_points += pts * mult
+        # Bench boost pays out the four bench slots (which carry multiplier 1
+        # instead of 0); triple captain pays one extra multiple of the captain.
+        if chip == "bboost" and pick.position >= 12:
+            chip_points += pts * mult
+        elif chip == "3xc" and pick.is_captain:
+            chip_points += pts
         if mult == 0:
             bench_points += pts
         else:
@@ -297,6 +305,7 @@ def build_manager_row(
         captain_element=captain_element,
         captain_points=captain_points,
         captain_played=captain_played,
+        chip_points=chip_points,
         to_play=to_play,
         in_play=in_play,
         played=played,

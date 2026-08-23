@@ -63,8 +63,19 @@ async def cmd_player(message: Message, command: CommandObject, engine: LiveEngin
         f"xG90 {e.get('expected_goals_per_90', '—')} · xA90 {e.get('expected_assists_per_90', '—')}",
         f"Def. contribution {e.get('defensive_contribution', 0)} · BPS {e.get('bps', 0)}",
     ]
-    if e.get("price_change_projections") is not None:
-        lines.append(f"Price projection: {e['price_change_projections']}")
+    if proj := e.get("price_change_projections"):
+        # The API hands back a list of {offset, projected_percent, likelihood}
+        # dicts; printing it raw dumped Python repr into the chat.
+        labels = {0: "tonight", 1: "+1d", 2: "+2d"}
+        bits = []
+        for x in sorted(proj, key=lambda d: d.get("offset", 0))[:3]:
+            try:
+                pct = float(x.get("projected_percent"))
+            except (TypeError, ValueError):
+                continue
+            bits.append(f"{labels.get(x.get('offset'), '?')} {pct:+.1f}%")
+        if bits:
+            lines.append("Price projection: " + " · ".join(bits))
     if p.news:
         lines.append(f"⚠️ {esc(p.news)}")
     if owners:
@@ -89,13 +100,13 @@ async def cmd_fixtures(message: Message, command: CommandObject, engine: LiveEng
                 continue
             diff = f.get("team_h_difficulty", 0) if target == h else f.get("team_a_difficulty", 0)
             marker = "🟢🟩⬜🟧🟥"[min(max(diff - 1, 0), 4)] if target else ""
-            out.append(f"GW{gw:<2} {h}–{a} {marker}")
+            out.append(f"<b>GW{gw}</b> · {esc(h)}–{esc(a)} {marker}".rstrip())
     if not out:
         await message.answer("No fixtures found for that team.")
         return
     await message.answer(
-        f"<b>Next fixtures{' · ' + esc(target) if target else ''}</b>\n"
-        f"<pre>{esc(chr(10).join(out[:40]))}</pre>"
+        f"📅 <b>Next fixtures{' · ' + esc(target) if target else ''}</b>\n\n"
+        + "\n".join(out[:40])
     )
 
 
@@ -138,20 +149,21 @@ async def cmd_chips(message: Message, engine: LiveEngine, default_league) -> Non
     async with session_scope() as s:
         members = await repo.league_members(s, default_league.id)
 
-    lines = []
+    label = {"wildcard": "Wildcard", "freehit": "Free hit",
+             "bboost": "Bench boost", "3xc": "Triple captain"}
+    blocks = []
     for m in members[:30]:
         history = await engine.client.entry_history(m.entry_id)
         avail = analysis.chip_availability(chips_meta, history.get("chips", []), event)
-        left = "".join(
-            {"wildcard": "W", "freehit": "F", "bboost": "B", "3xc": "T"}.get(k, "?")
-            for k, v in sorted(avail.items()) if v
-        ) or "—"
-        lines.append(f"{clip(m.team_name, 16):<16} {left}")
+        left = [label.get(k, k) for k, v in sorted(avail.items()) if v]
+        detail = ", ".join(left) if left else "all used"
+        blocks.append(
+            f"<b>{esc(clip(m.team_name, 28))}</b> — <b>{len(left)}</b>\n     {esc(detail)}"
+        )
 
     half = "GW20–38" if event >= 20 else "GW1–19"
     await message.answer(
-        f"<b>Chips left</b> · {half} half\n"
-        f"<pre>{esc(chr(10).join(lines))}</pre>\n"
-        "<i>W wildcard · F free hit · B bench boost · T triple captain</i>\n"
-        "<i>Chips reset at GW20 this season, so this is the current half only.</i>"
+        f"🃏 <b>Chips left</b> · {half} half\n\n"
+        + "\n\n".join(blocks)
+        + "\n\n<i>Chips reset at GW20 this season, so this is the current half only.</i>"
     )

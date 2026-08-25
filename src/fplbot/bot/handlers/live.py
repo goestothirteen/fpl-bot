@@ -24,13 +24,14 @@ from ..formatting import (
     render_live_cards,
     render_remaining_detail,
     render_season_table,
+    render_wager_table,
 )
 from ..keyboards import live_views
 
 router = Router(name="live")
 log = get_logger(__name__)
 
-VIEWS = ("live", "season", "left", "edge", "caps", "diff", "bench")
+VIEWS = ("live", "season", "left", "edge", "caps", "diff", "bench", "wager")
 
 
 async def _context(engine: LiveEngine, league_id: int, event: int):
@@ -41,7 +42,9 @@ async def _context(engine: LiveEngine, league_id: int, event: int):
     return table, players, live
 
 
-def _render(view: str, table: LiveTable, players, live) -> str:  # noqa: ANN001
+async def _render(view: str, engine: LiveEngine, table: LiveTable, players, live) -> str:  # noqa: ANN001
+    if view == "wager":
+        return await _wager_view(engine, table)
     if view == "season":
         return render_season_table(table)
     if view == "left":
@@ -55,6 +58,23 @@ def _render(view: str, table: LiveTable, players, live) -> str:  # noqa: ANN001
     if view == "bench":
         return render_bench(analysis.bench_disasters(table))
     return render_live_cards(table, players, live)
+
+
+async def _wager_view(engine: LiveEngine, table: LiveTable) -> str:
+    """Balances for the button on the /live keyboard."""
+    from ...services import ledger as ledger_svc
+    from ...services.wager import scheme_for
+
+    if scheme_for(table.league_id) is None:
+        return (
+            f"💰 <b>{esc(table.league_name)}</b>\n\n"
+            "No wager is configured for this league. The stakes live in code "
+            "so they can't be edited from a chat."
+        )
+    led = await ledger_svc.build(engine, table.league_id, table.league_name)
+    if led is None:
+        return "Couldn't build the ledger for this league."
+    return render_wager_table(await ledger_svc.with_season(engine, led, total_events=38))
 
 
 async def _resolve_league(message: Message, default_league, command_arg: str | None):  # noqa: ANN001
@@ -84,7 +104,8 @@ async def _send_view(
         return
 
     await note.edit_text(
-        _render(view, table, players, live), reply_markup=live_views(league_id, event, view)
+        await _render(view, engine, table, players, live),
+        reply_markup=live_views(league_id, event, view),
     )
     if table.phase is GamePhase.LIVE:
         async with session_scope() as s:
@@ -235,7 +256,7 @@ async def on_view_button(cb: CallbackQuery, engine: LiveEngine) -> None:
     await cb.answer("Refreshing…" if len(parts) > 4 else None)
     try:
         table, players, live = await _context(engine, league_id, event)
-        text = _render(view, table, players, live)
+        text = await _render(view, engine, table, players, live)
     except UpstreamUnavailable:
         await cb.answer("FPL isn't answering — try again shortly.", show_alert=True)
         return

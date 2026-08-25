@@ -149,7 +149,7 @@ class LivePoller:
             try:
                 table, players, live = await _context(self.engine, m.league_id, m.event)
                 await self.bot.edit_message_text(
-                    _render(m.view, table, players, live),
+                    await _render(m.view, self.engine, table, players, live),
                     chat_id=m.chat_id,
                     message_id=m.message_id,
                     reply_markup=live_views(m.league_id, m.event, m.view),

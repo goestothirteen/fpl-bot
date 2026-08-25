@@ -341,3 +341,81 @@ def player_line(p: Player, live: PlayerLive | None = None) -> str:
     flag = "" if not p.flagged else {"d": "🟡", "i": "🔴", "s": "🟥", "u": "⛔"}.get(p.status, "⚠️")
     pts = f" · {live.effective_points} pts" if live else ""
     return f"{flag}<b>{esc(p.web_name)}</b> £{p.price:.1f}m · {p.selected_by_percent:.1f}% owned{pts}"
+
+
+# ── wagers ─────────────────────────────────────────────────────────────────
+def _money_line(cents: int) -> str:
+    from ..services.wager import money
+    return money(cents)
+
+
+def render_wager_week(ledger, event: int) -> str:  # noqa: ANN001
+    """One gameweek's damage, with each manager's running total."""
+    rows = ledger.by_event.get(event)
+    if not rows:
+        return f"No settled result for GW{event} yet."
+    head = f"💰 <b>{esc(ledger.league_name)}</b> · GW{event} settlement"
+    blocks = []
+    for r in rows:
+        rank = MEDALS.get(r.position, f"<b>{r.position}</b>")
+        title = (f"{rank} <b>{esc(clip(r.team_name, 28))}</b> — "
+                 f"<b>{_money_line(r.amount)}</b>")
+        bits = [f"{r.points} pts"]
+        if r.manager_name:
+            bits.append(clip(r.manager_name, 22))
+        bits.append(f"balance {_money_line(r.balance)}")
+        blocks.append(f"{title}\n     {esc(' · '.join(bits))}")
+    return f"{head}\n\n" + "\n\n".join(blocks)
+
+
+def render_wager_table(ledger) -> str:  # noqa: ANN001
+    """Cumulative standings — who is up and who is down, overall."""
+    head = f"💰 <b>{esc(ledger.league_name)}</b> · wager balances"
+    if not ledger.events:
+        return (
+            f"{head}\n\nNo gameweek has been settled yet. Balances appear once "
+            "FPL marks a gameweek final."
+        )
+
+    final = ledger.final_balances
+    ordered = sorted(final.items(), key=lambda t: (-t[1], t[0]))
+    blocks = []
+    for i, (entry_id, cents) in enumerate(ordered, 1):
+        team, manager = ledger.names.get(entry_id, (str(entry_id), ""))
+        rank = MEDALS.get(i, f"<b>{i}</b>")
+        title = f"{rank} <b>{esc(clip(team, 28))}</b> — <b>{_money_line(cents)}</b>"
+        bits = []
+        if manager:
+            bits.append(clip(manager, 22))
+        if ledger.season_amounts:
+            weekly = ledger.balances.get(entry_id, 0)
+            season = ledger.season_amounts.get(entry_id, 0)
+            bits.append(f"weekly {_money_line(weekly)}")
+            bits.append(f"season {_money_line(season)}")
+        blocks.append(f"{title}\n     {esc(' · '.join(bits))}" if bits else title)
+
+    span = (f"GW{ledger.events[0]}" if len(ledger.events) == 1
+            else f"GW{ledger.events[0]}–{ledger.events[-1]}")
+    foot = f"<i>{span} · {len(ledger.events)} gameweek(s) settled"
+    foot += " · season adjustment applied</i>" if ledger.season_amounts else "</i>"
+    return f"{head}\n\n" + "\n\n".join(blocks) + f"\n\n{foot}"
+
+
+def render_settlement(ledger, payments: list[tuple[int, int, int]]) -> str:  # noqa: ANN001
+    """Who pays whom, netted down to the fewest transfers."""
+    head = f"🧾 <b>{esc(ledger.league_name)}</b> · final settlement"
+    if not payments:
+        return f"{head}\n\nEverything nets to zero — nobody owes anybody."
+    lines = []
+    for payer, payee, cents in payments:
+        from_team = ledger.names.get(payer, (str(payer), ""))[0]
+        to_team = ledger.names.get(payee, (str(payee), ""))[0]
+        from .. services.wager import money
+        lines.append(
+            f"<b>{esc(clip(from_team, 24))}</b> → <b>{esc(clip(to_team, 24))}</b>"
+            f"\n     {money(cents, signed=False)}"
+        )
+    return (
+        f"{head}\n\n" + "\n\n".join(lines)
+        + f"\n\n<i>{len(payments)} transfer(s) clears every balance</i>"
+    )

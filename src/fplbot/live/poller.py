@@ -181,7 +181,7 @@ class LivePoller:
                     "captain_points": r.captain_points,
                     "chip": r.active_chip,
                 }
-                for i, r in enumerate(table.ranked())
+                for i, r in enumerate(table.ranked_gw())
             ]
             async with session_scope() as s:
                 await repo.store_gw_results(s, league_id, event, rows)
@@ -198,3 +198,34 @@ class LivePoller:
                     fresh = await repo.claim_alert(s, chat.id, f"gw{event}:final:{league_id}")
                 if fresh:
                     await self.bot.send_message(chat.id, text, disable_web_page_preview=True)
+
+            await self._post_wager(league_id, event, chats)
+
+    async def _post_wager(self, league_id: int, event: int, chats) -> None:  # noqa: ANN001
+        """Settle the side-bet for a finalised gameweek, once per chat.
+
+        Amounts are derived from gw_result rather than accumulated, so running
+        this twice is a no-op; the alert_log key stops the *message* repeating.
+        """
+        from ..bot.formatting import render_wager_week
+        from ..services import ledger as ledger_svc
+        from ..services.wager import scheme_for
+
+        if scheme_for(league_id) is None:
+            return
+        try:
+            async with session_scope() as s:
+                league = await repo.get_league(s, league_id)
+            led = await ledger_svc.build(self.engine, league_id, getattr(league, "name", ""))
+            if led is None or event not in led.by_event:
+                return
+            text = render_wager_week(led, event)
+        except Exception:  # noqa: BLE001 - a wager failure must not break finalisation
+            log.exception("poller.wager_failed", league=league_id, event=event)
+            return
+
+        for chat in chats:
+            async with session_scope() as s:
+                fresh = await repo.claim_alert(s, chat.id, f"gw{event}:wager:{league_id}")
+            if fresh:
+                await self.bot.send_message(chat.id, text, disable_web_page_preview=True)

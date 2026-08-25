@@ -18,6 +18,7 @@ from .models import (
     LiveMessage,
     Manager,
     PicksCache,
+    WagerSettlement,
 )
 
 
@@ -148,6 +149,10 @@ async def default_league(s: AsyncSession, chat_id: int) -> League | None:
     return row.scalar_one_or_none()
 
 
+async def get_league(s: AsyncSession, league_id: int) -> League | None:
+    return await s.get(League, league_id)
+
+
 async def all_active_leagues(s: AsyncSession) -> list[int]:
     """Leagues bound to at least one chat that wants alerts."""
     rows = await s.execute(
@@ -188,6 +193,19 @@ async def sync_league_members(s: AsyncSession, league_id: int, entries: list[dic
             insert(LeagueManager)
             .values(league_id=league_id, entry_id=e["entry"])
             .on_conflict_do_nothing()
+        )
+
+    # Drop anyone who has left. Insert-only sync kept departed managers for
+    # ever; in a side-bet that means someone who has gone still holds a paying
+    # position. Their finalised gw_result rows are untouched, so past
+    # gameweeks keep whoever actually played them.
+    current = [e["entry"] for e in entries]
+    if current:
+        await s.execute(
+            delete(LeagueManager).where(
+                LeagueManager.league_id == league_id,
+                LeagueManager.entry_id.notin_(current),
+            )
         )
 
 
@@ -291,3 +309,55 @@ async def active_live_messages(s: AsyncSession) -> list[LiveMessage]:
 
 async def expire_live_messages(s: AsyncSession) -> None:
     await s.execute(delete(LiveMessage).where(LiveMessage.expires_at <= datetime.now(UTC)))
+
+
+# ── wagers ─────────────────────────────────────────────────────────────────
+async def gw_results_for_league(s: AsyncSession, league_id: int) -> dict[int, list[GWResult]]:
+    """{event: [rows]} for every finalised gameweek of a league."""
+    rows = await s.execute(
+        select(GWResult).where(GWResult.league_id == league_id).order_by(GWResult.event)
+    )
+    out: dict[int, list[GWResult]] = {}
+    for r in rows.scalars().all():
+        out.setdefault(r.event, []).append(r)
+    return out
+
+
+async def finalised_events(s: AsyncSession, league_id: int) -> list[int]:
+    rows = await s.execute(
+        select(GWResult.event).where(GWResult.league_id == league_id).distinct()
+    )
+    return sorted(rows.scalars().all())
+
+
+async def get_settlement(s: AsyncSession, league_id: int) -> WagerSettlement | None:
+    rows = await s.execute(
+        select(WagerSettlement)
+        .where(WagerSettlement.league_id == league_id)
+        .order_by(WagerSettlement.season_end_event.desc())
+    )
+    return rows.scalars().first()
+
+
+async def record_settlement(
+    s: AsyncSession,
+    league_id: int,
+    season_end_event: int,
+    balances: dict,
+    payments: list,
+    settled_by: int | None,
+) -> bool:
+    """Freeze a season's numbers. False if it was already settled."""
+    res = await s.execute(
+        insert(WagerSettlement)
+        .values(
+            league_id=league_id,
+            season_end_event=season_end_event,
+            balances={str(k): v for k, v in balances.items()},
+            payments=payments,
+            settled_by=settled_by,
+        )
+        .on_conflict_do_nothing()
+        .returning(WagerSettlement.league_id)
+    )
+    return res.scalar_one_or_none() is not None

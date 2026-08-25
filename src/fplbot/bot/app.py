@@ -18,7 +18,7 @@ from ..live.poller import LivePoller
 from ..logging_conf import configure_logging, get_logger
 from ..scheduler.jobs import build_scheduler
 from ..services.live import LiveEngine
-from .handlers import analysis_cmds, info, live, misc
+from .handlers import analysis_cmds, info, live, misc, wager
 from .handlers import setup as setup_handlers
 from .middlewares import ChatContextMiddleware, ThrottleMiddleware
 
@@ -29,6 +29,8 @@ COMMANDS = [
     ("season", "Full season standings"),
     ("left", "Who each team is still waiting on"),
     ("edge", "Unique players you still have to play"),
+    ("wager", "League side-bet balances"),
+    ("settle", "Who owes whom"),
     ("diff", "Differentials, or head-to-head"),
     ("captains", "Captain spread and returns"),
     ("bench", "Points left on benches"),
@@ -56,7 +58,7 @@ def build_dispatcher(engine: LiveEngine) -> Dispatcher:
     dp.callback_query.middleware(ChatContextMiddleware())
     dp["engine"] = engine
     for router in (setup_handlers.router, live.router, info.router,
-                   analysis_cmds.router, misc.router):
+                   analysis_cmds.router, wager.router, misc.router):
         dp.include_router(router)
     return dp
 

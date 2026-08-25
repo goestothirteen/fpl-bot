@@ -140,6 +140,27 @@ class AlertLog(Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class WagerSettlement(Base):
+    """A closed-out season side-bet.
+
+    Weekly amounts are never stored — they're derived from `gw_result`, so a
+    later FPL points correction flows through and a rerun can't double-count.
+    That's the right behaviour right up until money actually changes hands, at
+    which point the numbers people paid against must stop moving. Writing a row
+    here freezes them.
+    """
+
+    __tablename__ = "wager_settlement"
+
+    league_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season_end_event: Mapped[int] = mapped_column(Integer, primary_key=True)
+    balances: Mapped[dict] = mapped_column(JSONB)      # entry_id -> cents, frozen
+    payments: Mapped[list] = mapped_column(JSONB)      # [[from, to, cents], …]
+    settled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                 server_default=func.now())
+    settled_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
 class GWResult(Base):
     """Finalised per-gameweek results, powering /form, /streaks, /season."""
 

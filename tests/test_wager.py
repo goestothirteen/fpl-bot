@@ -156,3 +156,37 @@ def test_only_configured_leagues_have_a_scheme():
     assert wager.scheme_for(166726) is ZONGGERSNIPS
     assert wager.scheme_for(167008) is PNANIPILOTS
     assert wager.scheme_for(999999) is None
+
+
+class TestManualOverrides:
+    """PNANIPILOTS settled GW1 by hand after their own transfers, so the
+    ladder must not apply to that gameweek — but must apply from GW2."""
+
+    ASTON, MARK, TECK, IVAN = 2818107, 854227, 897915, 4886175
+
+    def test_gw1_is_the_agreed_net_not_the_ladder(self):
+        o = wager.override_for(167008, 1)
+        assert o is not None
+        assert o[self.ASTON] == 0
+        assert o[self.MARK] == -5400
+        assert o[self.TECK] == 5400
+        assert o[self.IVAN] == 0
+
+    def test_the_agreed_net_still_balances(self):
+        assert sum(wager.override_for(167008, 1).values()) == 0
+
+    def test_it_differs_from_what_the_ladder_would_have_paid(self):
+        # Real GW1 scores. Left alone the ladder pays +40/-5/-5/-30, which is
+        # not what they actually settled between themselves.
+        computed = settle(PNANIPILOTS, [
+            (self.TECK, 74), (self.MARK, 48), (self.ASTON, 48), (self.IVAN, 46),
+        ])
+        assert computed[self.TECK] == 4000
+        assert computed != wager.override_for(167008, 1)
+
+    def test_later_gameweeks_are_not_overridden(self):
+        assert wager.override_for(167008, 2) is None
+        assert wager.override_for(167008, 5) is None
+
+    def test_the_other_league_is_untouched(self):
+        assert wager.override_for(166726, 1) is None

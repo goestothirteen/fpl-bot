@@ -29,6 +29,7 @@ class WeekRow:
     position: int
     amount: int          # cents for this gameweek
     balance: int         # cumulative cents after this gameweek
+    agreed: bool = False # hand-settled rather than computed from the ladder
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,8 +120,10 @@ async def build(engine, league_id: int, league_name: str) -> Ledger | None:  # n
     for event in events:
         rows = stored[event]
         scores = [(r.entry_id, r.net_points) for r in rows]
-        amounts = wager.settle(scheme, scores, season=False)
         places = wager.positions(scores)
+        # A hand-agreed gameweek replaces the ladder outright.
+        override = wager.override_for(league_id, event)
+        amounts = dict(override) if override else wager.settle(scheme, scores, season=False)
 
         week: list[WeekRow] = []
         for r in sorted(rows, key=lambda x: (-x.net_points, x.entry_id)):
@@ -136,6 +139,7 @@ async def build(engine, league_id: int, league_name: str) -> Ledger | None:  # n
                     position=places.get(r.entry_id, 0),
                     amount=cents,
                     balance=balances[r.entry_id],
+                    agreed=override is not None,
                 )
             )
         by_event[event] = week

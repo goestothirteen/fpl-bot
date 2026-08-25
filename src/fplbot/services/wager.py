@@ -68,9 +68,30 @@ SCHEMES: dict[int, Scheme] = {
     167008: PNANIPILOTS,
 }
 
+# Gameweeks settled by hand, which replace the computed amount entirely.
+#
+# PNANIPILOTS squared GW1 up between themselves off the back of some internal
+# transfers before any of this existed, so the ladder never applied to it. The
+# agreed net is recorded here rather than being recomputed, and GW2 onward runs
+# normally. Like everything else it's a lookup, not an accumulation, so a rerun
+# is still a no-op.
+OVERRIDES: dict[tuple[int, int], dict[int, int]] = {
+    (167008, 1): {
+        2818107: _c(0),      # Aston Tan     · arsenaltreblewinners
+        854227: _c(-54),     # mark wee      · sandroTOOGNARLY
+        897915: _c(54),      # Teck Ann Tan  · Mbeumo My Hole
+        4886175: _c(0),      # Ivan Neo      · REECE'S SET PIECES
+    },
+}
+
 
 def scheme_for(league_id: int) -> Scheme | None:
     return SCHEMES.get(league_id)
+
+
+def override_for(league_id: int, event: int) -> dict[int, int] | None:
+    """A hand-agreed settlement for one gameweek, if there is one."""
+    return OVERRIDES.get((league_id, event))
 
 
 def amount_for_position(scheme: Scheme, position: int, players: int, *, season: bool) -> int:

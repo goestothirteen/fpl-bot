@@ -247,14 +247,19 @@ async def on_view_button(cb: CallbackQuery, engine: LiveEngine) -> None:
     if len(parts) < 4:
         await cb.answer()
         return
-    _, view, league_id_s, event_s = parts[:4]
+    _, view, league_id_s, _stale_event = parts[:4]   # event re-resolved below
     if view not in VIEWS:
         await cb.answer()
         return
 
-    league_id, event = int(league_id_s), int(event_s)
+    league_id = int(league_id_s)
     await cb.answer("Refreshing…" if len(parts) > 4 else None)
     try:
+        # The gameweek is baked into the button when the message is sent, so
+        # tapping one on last week's message would re-render last week for
+        # ever. Always re-resolve to whatever gameweek is current now, and
+        # rebuild the keyboard around it so the next tap agrees.
+        event = await engine.resolve_event()
         table, players, live = await _context(engine, league_id, event)
         text = await _render(view, engine, table, players, live)
     except UpstreamUnavailable:

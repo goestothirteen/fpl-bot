@@ -47,6 +47,7 @@ COMMANDS = [
     ("leagues", "Manage linked leagues"),
     ("me", "Claim your FPL team"),
     ("settings", "Alert preferences"),
+    ("topic", "Send alerts to this topic only"),
     ("help", "All commands"),
 ]
 

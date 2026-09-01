@@ -31,6 +31,7 @@ class Outbound:
     text: str
     key: str
     importance: int
+    thread_id: int | None = None   # forum topic to post into, if the chat pins one
 
 
 class Notifier:
@@ -85,13 +86,16 @@ class Notifier:
                 text = "\n".join(i.text for i in items[:12])
                 if len(items) > 12:
                     text += f"\n<i>…and {len(items) - 12} more</i>"
-                await self._send(chat_id, text)
+                await self._send(chat_id, text, items[0].thread_id)
                 await asyncio.sleep(self._per_chat_delay)
 
-    async def _send(self, chat_id: int, text: str) -> None:
+    async def _send(self, chat_id: int, text: str, thread_id: int | None = None) -> None:
         for _ in range(3):
             try:
-                await self.bot.send_message(chat_id, text, disable_web_page_preview=True)
+                await self.bot.send_message(
+                    chat_id, text, disable_web_page_preview=True,
+                    message_thread_id=thread_id,
+                )
                 return
             except TelegramRetryAfter as exc:
                 log.warning("notifier.rate_limited", chat=chat_id, retry_after=exc.retry_after)
@@ -112,5 +116,8 @@ class Notifier:
                 fresh = await repo.claim_alert(s, chat.id, ev.key)
             if fresh:
                 await self.enqueue(
-                    Outbound(chat_id=chat.id, text=ev.text, key=ev.key, importance=ev.importance)
+                    Outbound(
+                        chat_id=chat.id, text=ev.text, key=ev.key,
+                        importance=ev.importance, thread_id=repo.topic_of(chat),
+                    )
                 )

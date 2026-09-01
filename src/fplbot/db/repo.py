@@ -361,3 +361,27 @@ async def record_settlement(
         .returning(WagerSettlement.league_id)
     )
     return res.scalar_one_or_none() is not None
+
+
+# ── forum topics ───────────────────────────────────────────────────────────
+async def set_topic(s: AsyncSession, chat_id: int, topic_id: int | None) -> None:
+    """Pin the bot to one forum topic, or unpin it with None.
+
+    Lives in the settings JSONB rather than its own column: nothing queries or
+    indexes on it, it's read only alongside the chat row it belongs to.
+    """
+    row = await s.get(Chat, chat_id)
+    if row is None:
+        return
+    settings = dict(row.settings or {})
+    if topic_id is None:
+        settings.pop("topic_id", None)
+    else:
+        settings["topic_id"] = topic_id
+    # Reassign wholesale — a mutated dict isn't tracked by SQLAlchemy.
+    await s.execute(update(Chat).where(Chat.id == chat_id).values(settings=settings))
+
+
+def topic_of(chat) -> int | None:  # noqa: ANN001
+    """The bound topic for a Chat row, if it has one."""
+    return (getattr(chat, "settings", None) or {}).get("topic_id")

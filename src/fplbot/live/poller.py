@@ -197,7 +197,10 @@ class LivePoller:
                 async with session_scope() as s:
                     fresh = await repo.claim_alert(s, chat.id, f"gw{event}:final:{league_id}")
                 if fresh:
-                    await self.bot.send_message(chat.id, text, disable_web_page_preview=True)
+                    await self.bot.send_message(
+                        chat.id, text, disable_web_page_preview=True,
+                        message_thread_id=repo.topic_of(chat),
+                    )
 
             await self._post_wager(league_id, event, chats)
 
@@ -228,4 +231,7 @@ class LivePoller:
             async with session_scope() as s:
                 fresh = await repo.claim_alert(s, chat.id, f"gw{event}:wager:{league_id}")
             if fresh:
-                await self.bot.send_message(chat.id, text, disable_web_page_preview=True)
+                await self.bot.send_message(
+                    chat.id, text, disable_web_page_preview=True,
+                    message_thread_id=repo.topic_of(chat),
+                )

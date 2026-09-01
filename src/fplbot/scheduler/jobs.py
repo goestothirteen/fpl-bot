@@ -49,7 +49,8 @@ async def deadline_reminders(engine: LiveEngine, bot: Bot) -> None:
                     fresh = await repo.claim_alert(s, chat.id, key)
                 if fresh:
                     await bot.send_message(
-                        chat.id, render_deadline(state.next_deadline, chat.timezone)
+                        chat.id, render_deadline(state.next_deadline, chat.timezone),
+                        message_thread_id=repo.topic_of(chat),
                     )
             break
 
@@ -97,7 +98,10 @@ async def price_watch(engine: LiveEngine, bot: Bot) -> None:
             async with session_scope() as s:
                 fresh = await repo.claim_alert(s, chat.id, key)
             if fresh:
-                await bot.send_message(chat.id, "<b>Price changes</b>\n" + "\n".join(lines))
+                await bot.send_message(
+                    chat.id, "<b>Price changes</b>\n" + "\n".join(lines),
+                    message_thread_id=repo.topic_of(chat),
+                )
 
 
 async def nightly_maintenance() -> None:

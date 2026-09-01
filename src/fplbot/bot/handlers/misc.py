@@ -37,6 +37,7 @@ HELP = """<b>FPL mini-league bot</b>
 
 <b>Alerts</b>
 /settings — all · big-moments · digest-only · off
+/topic — run it inside a forum topic to send my alerts only there
 
 <i>League standings on the FPL site lag by hours. Everything here is computed
 live from match data, so it's current to the minute.</i>"""
@@ -72,6 +73,51 @@ async def on_group_upgraded(message: Message) -> None:
             f"{carried} linked league{'s' if carried != 1 else ''} and settings "
             "across. Nothing to redo.",
         )
+
+
+@router.message(Command("topic"))
+async def cmd_topic(message: Message, chat_row) -> None:  # noqa: ANN001
+    """Pin unprompted messages to one forum topic.
+
+    Commands always answer wherever they were typed — Telegram threads a reply
+    to its own message automatically. This only governs the messages the bot
+    sends on its own: goal alerts, the gameweek wrap-up, the wager settlement,
+    deadline reminders and price changes.
+    """
+    arg = (message.text or "").split(maxsplit=1)
+    arg = arg[1].strip().lower() if len(arg) > 1 else ""
+    current = repo.topic_of(chat_row)
+
+    if arg in {"off", "clear", "none"}:
+        async with session_scope() as s:
+            await repo.set_topic(s, message.chat.id, None)
+        await message.answer("Alerts will go to the whole group again, not one topic.")
+        return
+
+    thread_id = message.message_thread_id if message.is_topic_message else None
+    if thread_id is None:
+        if current is not None:
+            await message.answer(
+                f"Alerts currently go to topic <code>{current}</code>.\n"
+                "Run <code>/topic</code> inside the topic you want them in to move them, "
+                "or <code>/topic off</code> to send them to the whole group."
+            )
+            return
+        await message.answer(
+            "Run this <b>inside the topic</b> you want my alerts in, and I'll send "
+            "them all there.\n\nThis is the General topic (or not a forum group), so "
+            "there's nothing to pin to."
+        )
+        return
+
+    async with session_scope() as s:
+        await repo.set_topic(s, message.chat.id, thread_id)
+    await message.answer(
+        "📌 Got it — goal alerts, gameweek wrap-ups, wager settlements, deadline "
+        "reminders and price changes will all come to this topic only.\n\n"
+        "Commands still answer wherever you type them. "
+        "<code>/topic off</code> undoes this."
+    )
 
 
 @router.message(Command("settings"))

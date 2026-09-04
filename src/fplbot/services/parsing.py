@@ -50,13 +50,46 @@ def parse_players(bootstrap: dict) -> dict[int, Player]:
     return out
 
 
-def parse_game_state(bootstrap: dict) -> GameState:
+def parse_game_state(bootstrap: dict, *, now: datetime | None = None) -> GameState:
+    """Where the season is, derived from deadlines rather than `is_current`.
+
+    FPL flips `is_current` some minutes *after* the deadline it belongs to — at
+    the GW3 2026/27 rollover a bootstrap fetched 35 minutes past the deadline
+    still reported GW2 as current, and the lag stretches while the API sheds
+    load (it was 503ing at the time). Because `bootstrap-static` is cached for
+    six hours, believing the flag pinned every command — `/live`, `/transfers`,
+    the poller — to the previous gameweek for hours after the game had moved on.
+
+    Deadlines don't lag: the current gameweek is the last one whose deadline has
+    passed. The flags are still consulted so we can never resolve *backwards*
+    from what FPL claims (a deadline pushed back after a gameweek opens).
+    """
     events = bootstrap.get("events", [])
-    cur = next((e for e in events if e.get("is_current")), None)
-    nxt = next((e for e in events if e.get("is_next")), None)
+    by_id = {e["id"]: e for e in events if e.get("id") is not None}
+    flagged_cur = next((e["id"] for e in events if e.get("is_current")), None)
+    flagged_nxt = next((e["id"] for e in events if e.get("is_next")), None)
+
+    now = now or datetime.now(UTC)
+    deadlines = sorted(
+        (eid, _dt(e.get("deadline_time")))
+        for eid, e in by_id.items()
+        if e.get("deadline_time")
+    )
+    passed = [eid for eid, dl in deadlines if dl is not None and dl <= now]
+    upcoming = [eid for eid, dl in deadlines if dl is not None and dl > now]
+
+    cur_id = max(passed, default=None)
+    if flagged_cur is not None and (cur_id is None or flagged_cur > cur_id):
+        cur_id = flagged_cur
+    nxt_id = min((eid for eid in upcoming if cur_id is None or eid > cur_id), default=None)
+    if nxt_id is None:
+        nxt_id = flagged_nxt
+
+    cur = by_id.get(cur_id) if cur_id is not None else None
+    nxt = by_id.get(nxt_id) if nxt_id is not None else None
     return GameState(
-        current_event=cur["id"] if cur else None,
-        next_event=nxt["id"] if nxt else None,
+        current_event=cur_id,
+        next_event=nxt_id,
         next_deadline=_dt((nxt or cur or {}).get("deadline_time")),
         finished=bool(cur and cur.get("finished")),
         data_checked=bool(cur and cur.get("data_checked")),

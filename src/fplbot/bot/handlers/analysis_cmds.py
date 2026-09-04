@@ -7,12 +7,15 @@ from aiogram.types import Message
 
 from ...db import repo
 from ...db.session import session_scope
+from ...fpl.errors import UpstreamUnavailable
+from ...logging_conf import get_logger
 from ...services import analysis
 from ...services.live import LiveEngine
 from ...services.parsing import parse_live, parse_players
 from ..formatting import clip, esc, render_awards
 
 router = Router(name="analysis")
+log = get_logger(__name__)
 
 
 @router.message(Command("awards"))
@@ -59,9 +62,18 @@ async def cmd_transfers(message: Message, engine: LiveEngine, default_league) ->
     async with session_scope() as s:
         members = await repo.league_members(s, default_league.id)
 
+    # One manager's entry 503ing must not take the whole command down with it —
+    # FPL sheds load right after a deadline, exactly when this gets asked.
     blocks: list[str] = []
+    unreachable = 0
     for m in members[:30]:
-        moves = [t for t in await engine.client.entry_transfers(m.entry_id) if t["event"] == event]
+        try:
+            history = await engine.client.entry_transfers(m.entry_id)
+        except UpstreamUnavailable as exc:
+            log.warning("transfers.entry_failed", entry=m.entry_id, error=str(exc))
+            unreachable += 1
+            continue
+        moves = [t for t in history if t["event"] == event]
         if not moves:
             continue
         lines = [
@@ -71,10 +83,17 @@ async def cmd_transfers(message: Message, engine: LiveEngine, default_league) ->
         ]
         blocks.append(f"<b>{esc(clip(m.team_name, 20))}</b>\n" + "\n".join(lines))
 
+    footer = (
+        f"\n\n<i>{unreachable} manager(s) couldn't be reached — FPL is flaky right now.</i>"
+        if unreachable
+        else ""
+    )
     if not blocks:
-        await message.answer(f"No transfers made in GW{event} yet.")
+        await message.answer(f"No transfers made in GW{event} yet.{footer}")
         return
-    await message.answer(f"<b>Transfers · GW{event}</b>\n\n" + "\n\n".join(blocks))
+    await message.answer(
+        f"<b>Transfers · GW{event}</b>\n\n" + "\n\n".join(blocks) + footer
+    )
 
 
 @router.message(Command("form"))

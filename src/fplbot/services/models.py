@@ -72,6 +72,13 @@ class Fixture:
     finished: bool
     finished_provisional: bool
     bps: dict[int, int] = field(default_factory=dict)   # element id -> bps
+    bonus: dict[int, int] = field(default_factory=dict)  # element id -> awarded bonus
+
+    @property
+    def complete(self) -> bool:
+        """The whistle has gone. `finished_provisional` flips at full time;
+        `finished` only once FPL has checked the data, hours later."""
+        return self.finished_provisional or self.finished
 
     @property
     def state(self) -> FixtureState:

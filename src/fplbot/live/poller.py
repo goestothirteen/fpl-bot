@@ -11,6 +11,7 @@ Saturday costs roughly 80 upstream calls.
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 
 from aiogram import Bot
 from sqlalchemy import select
@@ -21,7 +22,7 @@ from ..db.session import session_scope
 from ..logging_conf import get_logger
 from ..services.live import LiveEngine
 from ..services.models import GamePhase
-from ..services.parsing import parse_live, parse_players
+from ..services.parsing import parse_fixtures, parse_live, parse_players
 from .events import attribute, detect_lead_change, diff_live, snapshot_of
 from .notifier import Notifier
 
@@ -65,12 +66,25 @@ class LivePoller:
     async def tick(self) -> int:
         info = await self.engine.phase()
         phase, event = info.phase, info.event
+
+        async with session_scope() as s:
+            league_ids = await repo.all_active_leagues(s)
+
+        # Settlement runs on its own schedule, before the dormant early-return
+        # below. A gameweek can still be awaiting confirmation long after the
+        # next one's deadline has passed — once `current_event` moves on, this
+        # is the only thing still looking at the old week, and returning early
+        # would strand it as provisional for ever.
+        if league_ids:
+            try:
+                await self._settle_pass(event, league_ids)
+            except Exception:  # noqa: BLE001 - settlement must not kill the loop
+                log.exception("poller.settle_pass_failed", gw=event)
+
         if event is None or phase is GamePhase.DORMANT:
             log.debug("poller.dormant", phase=str(phase), next_kickoff=str(info.next_kickoff))
             return self.engine.poll_interval(info, self.base_interval)
 
-        async with session_scope() as s:
-            league_ids = await repo.all_active_leagues(s)
         if not league_ids:
             return self.engine.poll_interval(info, self.base_interval)
 
@@ -90,9 +104,6 @@ class LivePoller:
 
         await self._store_snapshot(event, live)
         await self._refresh_live_messages()
-
-        if phase is GamePhase.FINALISED:
-            await self._finalise(event, league_ids)
 
         return self.engine.poll_interval(info, self.base_interval)
 
@@ -157,9 +168,92 @@ class LivePoller:
             except Exception as exc:  # noqa: BLE001 - "not modified" et al
                 log.debug("poller.edit_skipped", chat=m.chat_id, error=str(exc))
 
-    async def _finalise(self, event: int, league_ids: list[int]) -> None:
-        """Persist the confirmed table once FPL says data_checked, then post the
-        wrap-up exactly once per chat (the alert_log key makes that safe)."""
+    async def _settle_pass(self, current_event: int | None, league_ids: list[int]) -> None:
+        """Advance every gameweek that is mid-settlement.
+
+        Two stages, per `services.settlement`: write the week provisionally once
+        the football is over and bonus has landed, then rewrite and un-flag it
+        when FPL sets data_checked. Everything in between is a re-upsert, so a
+        late correction overwrites the provisional figure instead of sticking.
+        """
+        bootstrap = await self.engine.client.bootstrap()
+        confirmed = {e["id"] for e in bootstrap.get("events", []) if e.get("data_checked")}
+
+        async with session_scope() as s:
+            pending = await repo.provisional_events(s)
+            done = set(await repo.confirmed_events(s))
+
+        # Provisional weeks stay on the list until FPL confirms them, however
+        # many weeks that takes. The current week joins them unless it is
+        # already written and confirmed — once a week is locked there is
+        # nothing left to re-derive, so we stop touching it.
+        targets = set(pending)
+        if current_event is not None and current_event not in done:
+            targets.add(current_event)
+        for event in sorted(targets):
+            try:
+                await self._settle_event(event, league_ids, confirmed=event in confirmed)
+            except Exception:  # noqa: BLE001 - one bad week must not stop the rest
+                log.exception("poller.settle_failed", gw=event)
+
+    async def _settle_event(
+        self, event: int, league_ids: list[int], *, confirmed: bool
+    ) -> None:
+        from ..services.settlement import settlement_ready
+
+        if not confirmed:
+            fixtures = parse_fixtures(await self.engine.client.fixtures(event, live=True))
+            # `settlement_ready` rejects an unfinished week before it looks at
+            # any player, so don't pay for `/event/{gw}/live/` until the
+            # football is actually over — this runs on every poll.
+            live_now = (
+                parse_live(await self.engine.client.live(event))
+                if fixtures and all(f.complete for f in fixtures)
+                else {}
+            )
+            ready = settlement_ready(fixtures, live_now, now=datetime.now(UTC))
+            if not ready:
+                log.debug("poller.settle_not_ready", gw=event, reason=ready.reason)
+                return
+
+        for league_id in league_ids:
+            await self._store_week(league_id, event, provisional=not confirmed)
+
+        # `gw=` not `event=`: structlog reserves `event` for the message itself,
+        # and colliding with it raises inside the log call.
+        log.info(
+            "poller.settled",
+            gw=event,
+            stage="confirmed" if confirmed else "provisional",
+            leagues=len(league_ids),
+        )
+        if confirmed:
+            await self._announce_final(event, league_ids)
+
+    async def _store_week(self, league_id: int, event: int, *, provisional: bool) -> None:
+        """Upsert one league's rows for one gameweek. Safe to repeat."""
+        table = await self.engine.build_table(league_id, event)
+        rows = [
+            {
+                "entry_id": r.entry_id,
+                "points": r.gw_points,
+                "net_points": r.net_points,
+                "rank": i + 1,
+                "bench_points": r.bench_points,
+                "transfer_cost": r.transfer_cost,
+                "captain_element": r.captain_element,
+                "captain_points": r.captain_points,
+                "chip": r.active_chip,
+            }
+            for i, r in enumerate(table.ranked_gw())
+        ]
+        async with session_scope() as s:
+            await repo.store_gw_results(s, league_id, event, rows, provisional=provisional)
+
+    async def _announce_final(self, event: int, league_ids: list[int]) -> None:
+        """Post the wrap-up exactly once per chat (the alert_log key makes that
+        safe). Only ever fires on a confirmed gameweek — a provisional week is
+        shown in /wager but never announced as final."""
         from ..bot.formatting import render_awards, render_live_cards
         from ..services.analysis import awards
         from ..services.parsing import parse_players
@@ -169,22 +263,7 @@ class LivePoller:
 
         for league_id in league_ids:
             table = await self.engine.build_table(league_id, event)
-            rows = [
-                {
-                    "entry_id": r.entry_id,
-                    "points": r.gw_points,
-                    "net_points": r.net_points,
-                    "rank": i + 1,
-                    "bench_points": r.bench_points,
-                    "transfer_cost": r.transfer_cost,
-                    "captain_element": r.captain_element,
-                    "captain_points": r.captain_points,
-                    "chip": r.active_chip,
-                }
-                for i, r in enumerate(table.ranked_gw())
-            ]
             async with session_scope() as s:
-                await repo.store_gw_results(s, league_id, event, rows)
                 chats = await repo.chats_for_league(s, league_id)
 
             text = (
@@ -224,7 +303,7 @@ class LivePoller:
                 return
             text = render_wager_week(led, event)
         except Exception:  # noqa: BLE001 - a wager failure must not break finalisation
-            log.exception("poller.wager_failed", league=league_id, event=event)
+            log.exception("poller.wager_failed", league=league_id, gw=event)
             return
 
         for chat in chats:

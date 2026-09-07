@@ -355,6 +355,11 @@ def render_wager_week(ledger, event: int) -> str:  # noqa: ANN001
     if not rows:
         return f"No settled result for GW{event} yet."
     head = f"💰 <b>{esc(ledger.league_name)}</b> · GW{event} settlement"
+    if event in ledger.provisional:
+        head += (
+            f"\n<i>GW{event} provisional — bonus assigned, awaiting FPL final "
+            "confirmation. These amounts can still change.</i>"
+        )
     blocks = []
     for r in rows:
         rank = MEDALS.get(r.position, f"<b>{r.position}</b>")
@@ -398,6 +403,12 @@ def render_wager_table(ledger) -> str:  # noqa: ANN001
             else f"GW{ledger.events[0]}–{ledger.events[-1]}")
     foot = f"<i>{span} · {len(ledger.events)} gameweek(s) settled"
     foot += " · season adjustment applied</i>" if ledger.season_amounts else "</i>"
+    if ledger.provisional:
+        weeks = ", ".join(f"GW{e}" for e in sorted(ledger.provisional))
+        foot += (
+            f"\n<i>⏳ {weeks} provisional — bonus assigned, awaiting FPL final "
+            "confirmation. These amounts can still change.</i>"
+        )
     return f"{head}\n\n" + "\n\n".join(blocks) + f"\n\n{foot}"
 
 

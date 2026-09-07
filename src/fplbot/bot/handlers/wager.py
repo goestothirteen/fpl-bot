@@ -106,12 +106,23 @@ async def cmd_settle(message: Message, engine: LiveEngine, default_league) -> No
     payments = wager.transfers(balances)
 
     if not led.season_amounts:
+        # No season pot yet, so nothing is frozen and no money moves. Either the
+        # season is still running, or every gameweek is in but one of them is
+        # still provisional — `ledger.with_season` withholds the pot until FPL
+        # has confirmed all 38.
         settled = len(led.events)
-        await note.edit_text(
-            render_settlement(led, payments)
-            + f"\n<i>Provisional — {settled} of {SEASON_EVENTS} gameweeks settled. "
-            "The season adjustment applies once GW38 is final.</i>"
-        )
+        if led.has_provisional:
+            weeks = ", ".join(f"GW{e}" for e in sorted(led.provisional))
+            why = (
+                f"\n<i>Provisional — {weeks} still awaiting FPL confirmation. "
+                "Nothing is frozen until every gameweek is confirmed.</i>"
+            )
+        else:
+            why = (
+                f"\n<i>Provisional — {settled} of {SEASON_EVENTS} gameweeks settled. "
+                "The season adjustment applies once GW38 is final.</i>"
+            )
+        await note.edit_text(render_settlement(led, payments) + why)
         return
 
     async with session_scope() as s:

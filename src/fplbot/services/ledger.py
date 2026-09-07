@@ -1,11 +1,18 @@
-"""Assembling wager ledgers from finalised results.
+"""Assembling wager ledgers from settled results.
 
-`gw_result` is written by the poller when FPL sets `data_checked`. That is the
-correct trigger — a postponed fixture keeps the gameweek open, so nothing is
-ever settled on incomplete data — but it means a gameweek that finalises while
-the bot happens to be down would be lost for ever. For a side-bet that is not
-acceptable, so anything missing is rebuilt from `entry/{id}/history/`, which is
-permanent and per-manager rather than a moment-in-time snapshot.
+`gw_result` is written by the poller in two stages (see `services.settlement`):
+provisionally once the football is over and bonus has landed, then confirmed
+when FPL sets `data_checked`. Weekly amounts are never stored — they are
+recomputed from `gw_result` on every view — so a week that is rewritten by a
+late correction simply re-derives, and a provisional week costs nothing to
+revise.
+
+A gameweek that finalises while the bot happens to be down would still be lost,
+so anything missing is rebuilt from `entry/{id}/history/`, which is permanent
+and per-manager rather than a moment-in-time snapshot. That backfill stays
+gated on `data_checked`: the history endpoint lags badly while a week is still
+provisional (GW3 2026/27 read 54 there against a true 67), so rebuilding from
+it early would write numbers that are simply wrong.
 """
 from __future__ import annotations
 
@@ -43,6 +50,11 @@ class Ledger:
     names: dict[int, tuple[str, str]]        # entry_id -> (team, manager)
     season_amounts: dict[int, int] | None = None   # applied only once complete
     season_positions: dict[int, int] | None = None
+    provisional: frozenset[int] = frozenset()      # events awaiting FPL confirmation
+
+    @property
+    def has_provisional(self) -> bool:
+        return bool(self.provisional)
 
     @property
     def final_balances(self) -> dict[int, int]:
@@ -62,7 +74,7 @@ async def _backfill(engine, league_id: int, event: int, members: list) -> list[d
         try:
             history = await engine.client.entry_history(m.entry_id)
         except Exception:  # noqa: BLE001 - a single unreachable manager must not stall the rest
-            log.warning("ledger.history_failed", entry=m.entry_id, event=event)
+            log.warning("ledger.history_failed", entry=m.entry_id, gw=event)
             continue
         entry = next((h for h in history.get("current", []) if h.get("event") == event), None)
         if entry is None:
@@ -114,6 +126,9 @@ async def build(engine, league_id: int, league_name: str) -> Ledger | None:  # n
                     stored = await repo.gw_results_for_league(s, league_id)
 
     events = sorted(stored)
+    provisional = frozenset(
+        event for event, rows in stored.items() if any(r.provisional for r in rows)
+    )
     by_event: dict[int, list[WeekRow]] = {}
     balances: dict[int, int] = {}
 
@@ -152,6 +167,7 @@ async def build(engine, league_id: int, league_name: str) -> Ledger | None:  # n
         by_event=by_event,
         balances=balances,
         names=names,
+        provisional=provisional,
     )
 
 
@@ -166,6 +182,17 @@ async def with_season(engine, ledger: Ledger, *, total_events: int = 38) -> Ledg
     gameweek recomputes both without one contaminating the other.
     """
     if len(ledger.events) < total_events or total_events not in ledger.events:
+        return ledger
+
+    # The season pot is what `cmd_settle` freezes and pays out on, so it must
+    # never be computed from a week FPL has not confirmed. A provisional week
+    # is still expected to move; money is not.
+    if ledger.has_provisional:
+        log.info(
+            "ledger.season_withheld",
+            league=ledger.league_id,
+            provisional=sorted(ledger.provisional),
+        )
         return ledger
 
     season_scores: list[tuple[int, int]] = []
@@ -186,6 +213,7 @@ async def with_season(engine, ledger: Ledger, *, total_events: int = 38) -> Ledg
         by_event=ledger.by_event,
         balances=ledger.balances,
         names=ledger.names,
+        provisional=ledger.provisional,
         season_amounts=wager.settle(ledger.scheme, season_scores, season=True),
         season_positions=wager.positions(season_scores),
     )

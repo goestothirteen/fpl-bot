@@ -102,11 +102,14 @@ def parse_fixtures(raw: list[dict]) -> list[Fixture]:
     fixtures: list[Fixture] = []
     for f in raw:
         bps: dict[int, int] = {}
+        bonus: dict[int, int] = {}
         for stat in f.get("stats", []):
-            if stat.get("identifier") == "bps":
-                for side in ("h", "a"):
-                    for item in stat.get(side, []):
-                        bps[item["element"]] = item["value"]
+            target = {"bps": bps, "bonus": bonus}.get(stat.get("identifier"))
+            if target is None:
+                continue
+            for side in ("h", "a"):
+                for item in stat.get(side, []):
+                    target[item["element"]] = item["value"]
         fixtures.append(
             Fixture(
                 id=f["id"],
@@ -121,6 +124,7 @@ def parse_fixtures(raw: list[dict]) -> list[Fixture]:
                 finished=bool(f.get("finished")),
                 finished_provisional=bool(f.get("finished_provisional")),
                 bps=bps,
+                bonus=bonus,
             )
         )
     return fixtures

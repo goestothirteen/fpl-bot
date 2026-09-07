@@ -275,16 +275,45 @@ async def prune_alerts(s: AsyncSession, older_than_days: int = 14) -> None:
 
 
 # ── results & live messages ────────────────────────────────────────────────
-async def store_gw_results(s: AsyncSession, league_id: int, event: int, rows: list[dict]) -> None:
+async def store_gw_results(
+    s: AsyncSession, league_id: int, event: int, rows: list[dict],
+    *, provisional: bool = False,
+) -> None:
+    """Upsert one gameweek's results for a league.
+
+    Idempotent by (league, event, entry), so the poller can re-run this every
+    cycle while a week is provisional and a late FPL correction simply
+    overwrites. `provisional` is part of the updated set, which is what lets the
+    confirm step flip a week to final by re-writing it.
+    """
     for r in rows:
+        values = {**r, "provisional": provisional}
         await s.execute(
             insert(GWResult)
-            .values(league_id=league_id, event=event, **r)
+            .values(league_id=league_id, event=event, **values)
             .on_conflict_do_update(
                 index_elements=[GWResult.league_id, GWResult.event, GWResult.entry_id],
-                set_=r,
+                set_=values,
             )
         )
+
+
+async def provisional_events(s: AsyncSession) -> list[int]:
+    """Gameweeks with any provisional row, across all leagues — the poller's
+    to-do list of weeks still awaiting FPL confirmation."""
+    rows = await s.execute(
+        select(GWResult.event).where(GWResult.provisional.is_(True)).distinct()
+    )
+    return sorted(rows.scalars().all())
+
+
+async def confirmed_events(s: AsyncSession) -> list[int]:
+    """Gameweeks already written and confirmed. Settlement is finished with
+    these, so the poller stops re-deriving them every cycle."""
+    rows = await s.execute(
+        select(GWResult.event).where(GWResult.provisional.is_(False)).distinct()
+    )
+    return sorted(rows.scalars().all())
 
 
 async def register_live_message(s: AsyncSession, chat_id: int, message_id: int, league_id: int,

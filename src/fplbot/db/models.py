@@ -177,6 +177,12 @@ class GWResult(Base):
     captain_element: Mapped[int | None] = mapped_column(Integer, nullable=True)
     captain_points: Mapped[int] = mapped_column(Integer, default=0)
     chip: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # True between provisional settlement and FPL confirming the gameweek. The
+    # poller keeps re-upserting these rows until data_checked clears the flag,
+    # so a late correction overwrites rather than sticks.
+    provisional: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
 
 class LiveMessage(Base):

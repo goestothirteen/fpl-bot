@@ -264,7 +264,7 @@ class FPLClient:
             except NotFound:
                 return eid, None
             except UpstreamUnavailable as exc:
-                log.warning("fpl.picks_failed", entry=eid, event=event, error=str(exc))
+                log.warning("fpl.picks_failed", entry=eid, gw=event, error=str(exc))
                 return eid, None
 
         pairs = await asyncio.gather(*(one(e) for e in entry_ids))

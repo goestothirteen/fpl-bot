@@ -18,8 +18,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ..services.models import ManagerLive, Player, PlayerLive
 
-# Pitch geometry (pixels).
+# Pitch geometry (pixels). The image is drawn at this base size then scaled up
+# by SCALE for the final PNG, since the built-in bitmap font can't be enlarged.
 W, H = 760, 1040
+SCALE = 2
 BENCH_H = 150
 PITCH_H = H - BENCH_H
 
@@ -70,20 +72,29 @@ def _draw_card(draw: ImageDraw.ImageDraw, cx: int, cy: int, *,
     # Name strip.
     _text_centered(draw, cx, y0 + 6, _clip(name), CARD_TEXT)
 
-    # Points strip — emphasised in GW-score mode.
+    # Points strip — only shown once the player has actually played. For a
+    # player still waiting on his fixture, showing "0" reads as a blank/duck
+    # rather than "not started yet", so we omit the chip entirely and just mark
+    # the captain/vice.
     if mode == "score":
-        pts_h = 30
-        draw.rounded_rectangle((x0, y1 - pts_h, x1, y1), radius=8, fill=PTS_BG)
-        _text_centered(draw, cx, y1 - pts_h + 6, f"{points}", PTS_TEXT)
+        if played:
+            pts_h = 30
+            draw.rounded_rectangle((x0, y1 - pts_h, x1, y1), radius=8, fill=PTS_BG)
+            _text_centered(draw, cx, y1 - pts_h + 6, f"{points}", PTS_TEXT)
+        elif captain or vice:
+            _text_centered(draw, cx, y1 - 20, "(C)" if captain else "(V)", CARD_TEXT)
     else:
         tag = ""
         if captain:
             tag = " (C)"
         elif vice:
             tag = " (V)"
-        draw.rounded_rectangle((x0 + 18, y1 - 24, x1 - 18, y1 - 2), radius=6,
-                               fill=PTS_BG)
-        _text_centered(draw, cx, y1 - 23, f"{points}{tag}", PTS_TEXT)
+        if played:
+            draw.rounded_rectangle((x0 + 18, y1 - 24, x1 - 18, y1 - 2), radius=6,
+                                   fill=PTS_BG)
+            _text_centered(draw, cx, y1 - 23, f"{points}{tag}", PTS_TEXT)
+        elif tag:
+            _text_centered(draw, cx, y1 - 20, tag.strip(), CARD_TEXT)
 
 
 def _row_y(row_index: int, total_rows: int) -> int:
@@ -191,6 +202,12 @@ def render_pitch(
                 played=bool(lv and lv.minutes > 0),
                 captain=False, vice=False, mode=mode,
             )
+
+    # Scale the whole canvas up so it's legible on a phone. The default bitmap
+    # font doesn't scale, so we draw at the base resolution and enlarge the
+    # finished image; LANCZOS keeps the text edges smooth rather than blocky.
+    if SCALE != 1:
+        img = img.resize((W * SCALE, H * SCALE), Image.LANCZOS)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")

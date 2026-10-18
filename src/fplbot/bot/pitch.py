@@ -6,10 +6,10 @@ network-free, Telegram-free renderer: given one manager's picks plus the player
 and live maps, it returns PNG bytes. Kept pure so it is unit-testable and so the
 handler layer stays thin.
 
-Text is drawn with the DejaVu TrueType fonts that ship inside Pillow, so names
-and points can be set at a real point size (the old built-in bitmap font could
-not be enlarged, which left the cards tiny in a big green canvas). If DejaVu is
-somehow unavailable we fall back to the bitmap font rather than crash.
+Text is drawn with the DejaVu TrueType fonts that ship inside Pillow so names
+can be set at a large point size. The player NAME dominates each card; the
+points are a small chip shown only once the player has actually played (minutes
+> 0) — a player yet to kick off shows no number rather than a misleading 0.
 """
 from __future__ import annotations
 
@@ -19,8 +19,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ..services.models import ManagerLive, Player, PlayerLive
 
-# Pitch geometry (pixels). Drawn once at this resolution with scalable fonts —
-# no post-scaling, so the text is genuinely large rather than an upscaled blur.
+# Pitch geometry (pixels). Drawn once at this resolution with scalable fonts.
 W, H = 960, 1180
 BENCH_H = 190
 PITCH_H = H - BENCH_H
@@ -52,9 +51,9 @@ def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageF
 
 FONT_TITLE = _load_font(36, bold=True)
 FONT_SUB = _load_font(26)
-FONT_NAME = _load_font(30, bold=True)
-FONT_PTS = _load_font(40, bold=True)
-FONT_PTS_SMALL = _load_font(28, bold=True)
+# The name is the dominant element on the card; points are a small chip.
+FONT_NAME = _load_font(40, bold=True)
+FONT_PTS = _load_font(26, bold=True)
 FONT_BENCH = _load_font(24, bold=True)
 
 ELEMENT_ROWS = (1, 2, 3, 4)   # GK, DEF, MID, FWD
@@ -67,14 +66,20 @@ def _text_centered(draw: ImageDraw.ImageDraw, cx: int, y: int, text: str,
     draw.text((cx - w // 2, y), text, font=font, fill=fill)
 
 
-def _clip(name: str, width: int = 11) -> str:
-    return name if len(name) <= width else name[: width - 1] + "…"
+def _fit_name(draw: ImageDraw.ImageDraw, name: str, max_w: int):  # noqa: ANN202
+    """Pick the biggest of a few name fonts that fits `max_w`, so a long name
+    shrinks rather than spilling over the card edge."""
+    for size in (40, 34, 28, 24):
+        f = _load_font(size, bold=True)
+        if draw.textlength(name, font=f) <= max_w:
+            return f
+    return _load_font(22, bold=True)
 
 
 def _draw_card(draw: ImageDraw.ImageDraw, cx: int, cy: int, *,
                name: str, points: int, played: bool, captain: bool,
-               vice: bool, mode: str) -> None:
-    """One player card centred on (cx, cy)."""
+               vice: bool) -> None:
+    """One player card centred on (cx, cy). Name dominates; points only if played."""
     x0, y0 = cx - CARD_W // 2, cy - CARD_H // 2
     x1, y1 = cx + CARD_W // 2, cy + CARD_H // 2
     body = CARD_PLAYED if played else CARD_WAITING
@@ -84,35 +89,26 @@ def _draw_card(draw: ImageDraw.ImageDraw, cx: int, cy: int, *,
                                fill=CAPTAIN_RING)
     draw.rounded_rectangle((x0, y0, x1, y1), radius=12, fill=body)
 
-    # Name strip.
-    _text_centered(draw, cx, y0 + 10, _clip(name), CARD_TEXT, FONT_NAME)
+    # Captain / vice marker, top-right corner, small.
+    marker = "C" if captain else ("V" if vice else "")
+    if marker:
+        draw.ellipse((x1 - 30, y0 + 6, x1 - 6, y0 + 30), fill=PTS_BG)
+        _text_centered(draw, x1 - 18, y0 + 8, marker, HEADER_TEXT, FONT_PTS)
 
-    # Points strip — only shown once the player has actually played. For a
-    # player still waiting on his fixture, showing "0" reads as a blank/duck
-    # rather than "not started yet", so we omit the chip entirely and just mark
-    # the captain/vice.
-    if mode == "score":
-        if played:
-            pts_h = 50
-            draw.rounded_rectangle((x0, y1 - pts_h, x1, y1), radius=12, fill=PTS_BG)
-            _text_centered(draw, cx, y1 - pts_h + 5, f"{points}", PTS_TEXT, FONT_PTS)
-        elif captain or vice:
-            _text_centered(draw, cx, y1 - 38, "(C)" if captain else "(V)",
-                           CARD_TEXT, FONT_PTS_SMALL)
-    else:
-        tag = ""
-        if captain:
-            tag = " (C)"
-        elif vice:
-            tag = " (V)"
-        if played:
-            pts_h = 34
-            draw.rounded_rectangle((x0 + 22, y1 - pts_h, x1 - 22, y1 - 4), radius=9,
-                                   fill=PTS_BG)
-            _text_centered(draw, cx, y1 - pts_h + 2, f"{points}{tag}",
-                           PTS_TEXT, FONT_PTS_SMALL)
-        elif tag:
-            _text_centered(draw, cx, y1 - 32, tag.strip(), CARD_TEXT, FONT_PTS_SMALL)
+    # Name — the dominant element, vertically centred and auto-sized to fit.
+    name_font = _fit_name(draw, name, CARD_W - 20)
+    nbbox = draw.textbbox((0, 0), name, font=name_font)
+    nh = nbbox[3] - nbbox[1]
+    # Leave room for the points chip at the bottom when played.
+    name_cy = cy - (12 if played else 0)
+    _text_centered(draw, cx, name_cy - nh // 2 - nbbox[1], name, CARD_TEXT, name_font)
+
+    # Points chip — only once the player has actually played.
+    if played:
+        chip_w = 60
+        draw.rounded_rectangle((cx - chip_w // 2, y1 - 30, cx + chip_w // 2, y1 - 4),
+                               radius=9, fill=PTS_BG)
+        _text_centered(draw, cx, y1 - 30, f"{points}", PTS_TEXT, FONT_PTS)
 
 
 def _row_y(row_index: int, total_rows: int) -> int:
@@ -128,14 +124,15 @@ def render_pitch(
     players: dict[int, Player],
     live: dict[int, PlayerLive],
     *,
-    mode: str,
     event: int,
     league_name: str,
 ) -> bytes:
     """Render `manager`'s XI (+ bench strip) to PNG bytes.
 
-    `mode` is "pitch" (formation, points small) or "score" (points emphasised
-    with a running GW total in the header). Pure: no network, no Telegram.
+    One view: the formation, each card dominated by the player's name, with a
+    small points chip shown only for players who have played. The header shows
+    the manager's team name, gameweek and running net GW points. Pure: no
+    network, no Telegram.
     """
     img = Image.new("RGB", (W, H), GRASS_DARK)
     draw = ImageDraw.Draw(img)
@@ -151,21 +148,16 @@ def render_pitch(
     draw.rectangle((10, HEADER_H + 10, W - 10, PITCH_H - 10), outline=LINE, width=3)
     draw.line((10, mid_y, W - 10, mid_y), fill=LINE, width=2)
     draw.ellipse((W // 2 - 80, mid_y - 80, W // 2 + 80, mid_y + 80), outline=LINE, width=2)
-    # Penalty boxes.
     draw.rectangle((W // 2 - 150, HEADER_H + 10, W // 2 + 150, HEADER_H + 100),
                    outline=LINE, width=2)
     draw.rectangle((W // 2 - 150, PITCH_H - 100, W // 2 + 150, PITCH_H - 10),
                    outline=LINE, width=2)
 
-    # Header.
+    # Header: team name + GW, then the running net GW points.
     draw.rectangle((0, 0, W, HEADER_H), fill=HEADER_BG)
     title = f"{_clip(manager.team_name, 22)} · GW{event}"
     _text_centered(draw, W // 2, 14, title, HEADER_TEXT, FONT_TITLE)
-    if mode == "score":
-        sub = f"{manager.net_points} pts"
-    else:
-        sub = _clip(manager.manager_name, 26)
-    _text_centered(draw, W // 2, 56, sub, SUB_TEXT, FONT_SUB)
+    _text_centered(draw, W // 2, 56, f"{manager.net_points} pts", SUB_TEXT, FONT_SUB)
 
     # Split picks: starters (1-11) by element_type into rows, bench (12-15).
     starters = sorted(
@@ -200,7 +192,6 @@ def render_pitch(
                 played=bool(lv and lv.minutes > 0),
                 captain=p.is_captain,
                 vice=p.is_vice_captain,
-                mode=mode,
             )
 
     # Bench strip.
@@ -217,9 +208,13 @@ def render_pitch(
                 name=pl.web_name if pl else "?",
                 points=lv.effective_points if lv else 0,
                 played=bool(lv and lv.minutes > 0),
-                captain=False, vice=False, mode=mode,
+                captain=False, vice=False,
             )
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def _clip(name: str, width: int = 22) -> str:
+    return name if len(name) <= width else name[: width - 1] + "…"

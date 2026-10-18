@@ -49,23 +49,16 @@ class TestRenderPitch:
     def test_returns_valid_png_for_a_full_xi(self):
         png = render_pitch(
             _manager(_full_squad()), _players(), _live(),
-            mode="pitch", event=7, league_name="Test League",
+            event=7, league_name="Test League",
         )
         assert isinstance(png, bytes)
         assert png.startswith(PNG_MAGIC)
         assert len(png) > 1000   # a real image, not a stub
 
-    def test_score_mode_also_renders(self):
-        png = render_pitch(
-            _manager(_full_squad()), _players(), _live(),
-            mode="score", event=7, league_name="Test League",
-        )
-        assert png.startswith(PNG_MAGIC)
-
     def test_empty_picks_does_not_raise(self):
         png = render_pitch(
             _manager([]), {}, {},
-            mode="pitch", event=7, league_name="Test League",
+            event=7, league_name="Test League",
         )
         assert png.startswith(PNG_MAGIC)
 
@@ -73,6 +66,17 @@ class TestRenderPitch:
         # Picks reference elements with no Player/live entry — must not raise.
         png = render_pitch(
             _manager(_full_squad()), {}, {},
-            mode="score", event=7, league_name="Test League",
+            event=7, league_name="Test League",
+        )
+        assert png.startswith(PNG_MAGIC)
+
+    def test_long_player_name_is_handled(self):
+        # A very long web_name must auto-shrink to fit, not crash.
+        from dataclasses import replace
+        players = _players()
+        players[6] = replace(players[6], web_name="Alexander-Arnoldssen")
+        png = render_pitch(
+            _manager(_full_squad()), players, _live(),
+            event=7, league_name="Test League",
         )
         assert png.startswith(PNG_MAGIC)

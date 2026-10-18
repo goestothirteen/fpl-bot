@@ -1,19 +1,18 @@
 """The "⚽ Teams" view: a per-manager pitch visualisation on its own photo
-message.
+message, with the league's managers listed as tappable buttons underneath.
 
 A Telegram message is either text or a photo — you can't edit one into the
 other. The GW/Season/Edge/... views all live on a single text message that gets
 edited in place. The pitch is an image, so it gets its OWN photo message,
-spawned when the user taps "⚽ Teams" on the text keyboard. From then on,
-switching managers or flipping between the formation and the GW-score view edits
-THAT photo in place (editMessageMedia) — it never spams a new photo per tap.
+spawned when the user taps "⚽ Teams" on the text keyboard. The keyboard under
+the photo is a persistent LIST of the league's managers: tapping any name swaps
+the pitch to that manager (editing the photo in place via editMessageMedia), and
+the full list stays visible the whole time — no paging, no prev/next.
 
 Callback namespaces (kept separate from the text router's `v:` prefix):
-  teams:open:<league>:<event>              — tapped on the text keyboard; spawn photo
-  tm:<league>:<event>:<entry>:<mode>       — set a specific manager/mode (unused direct, reserved)
-  tmnav:<league>:<event>:<entry>:<mode>:<prev|next>  — cycle managers
-  tmmode:<league>:<event>:<entry>:<mode>   — toggle pitch<->score
-  tmclose                                  — delete the photo message
+  teams:open:<league>:<event>        — tapped on the text keyboard; spawn photo + list
+  tm:<league>:<entry>                — show this manager's pitch (event re-resolved)
+  tmclose                            — delete the photo message
 """
 from __future__ import annotations
 
@@ -32,19 +31,25 @@ from ..pitch import render_pitch
 router = Router(name="teams")
 log = get_logger(__name__)
 
-MODES = ("pitch", "score")
+# Keep the keyboard inside Telegram's limits even for a big public league.
+MAX_LISTED = 30
 
 
-def _kb(league_id: int, event: int, entry_id: int, mode: str):  # noqa: ANN202
-    """Switcher under the photo: manager nav, mode toggle, close."""
+def _kb(league_id: int, table: LiveTable, active_entry: int):  # noqa: ANN202
+    """A row per manager (tappable to swap the pitch) + a close button.
+
+    The active manager is marked and placed first so the list reads as "showing
+    X, tap another to switch". Two managers per row to keep it compact.
+    """
     b = InlineKeyboardBuilder()
-    b.button(text="◀ Prev", callback_data=f"tmnav:{league_id}:{event}:{entry_id}:{mode}:prev")
-    b.button(text="Next ▶", callback_data=f"tmnav:{league_id}:{event}:{entry_id}:{mode}:next")
-    other = "score" if mode == "pitch" else "pitch"
-    label = "📊 GW score" if other == "score" else "🅿️ Pitch"
-    b.button(text=label, callback_data=f"tmmode:{league_id}:{event}:{entry_id}:{other}")
+    rows = table.ranked_gw()[:MAX_LISTED]
+    for r in rows:
+        mark = "• " if r.entry_id == active_entry else ""
+        label = f"{mark}{r.team_name}"[:30]
+        b.button(text=label, callback_data=f"tm:{league_id}:{r.entry_id}")
     b.button(text="✖ Close", callback_data="tmclose")
-    b.adjust(2, 1, 1)
+    # Two managers per row; the close button on its own final row.
+    b.adjust(*([2] * ((len(rows) + 1) // 2)), 1)
     return b.as_markup()
 
 
@@ -56,26 +61,14 @@ async def _table(engine: LiveEngine, league_id: int, event: int):  # noqa: ANN20
     return table, players, live
 
 
-def _pick_entry(table: LiveTable, entry_id: int | None, step: int) -> int | None:
-    """Resolve which manager to show. `step` of -1/+1 cycles; 0 keeps/ defaults."""
-    rows = table.ranked_gw()
-    if not rows:
-        return None
-    ids = [r.entry_id for r in rows]
-    if entry_id is None or entry_id not in ids:
-        return ids[0]
-    idx = (ids.index(entry_id) + step) % len(ids)
-    return ids[idx]
-
-
-def _photo(table: LiveTable, players, live, entry_id: int, mode: str):  # noqa: ANN202
+def _photo(table: LiveTable, players, live, entry_id: int):  # noqa: ANN202
     row = next((r for r in table.rows if r.entry_id == entry_id), None)
     if row is None:
         return None
     png = render_pitch(
-        row, players, live, mode=mode, event=table.event, league_name=table.league_name
+        row, players, live, event=table.event, league_name=table.league_name
     )
-    return BufferedInputFile(png, filename=f"pitch_{entry_id}_{mode}.png")
+    return BufferedInputFile(png, filename=f"pitch_{entry_id}.png")
 
 
 @router.callback_query(F.data.startswith("teams:open:"))
@@ -93,24 +86,25 @@ async def on_open(cb: CallbackQuery, engine: LiveEngine) -> None:
         await cb.answer("FPL isn't answering — try again shortly.", show_alert=True)
         return
 
-    entry_id = _pick_entry(table, None, 0)
-    if entry_id is None:
+    rows = table.ranked_gw()
+    if not rows:
         await cb.answer("No managers in this league yet.", show_alert=True)
         return
-    photo = _photo(table, players, live, entry_id, "pitch")
+    entry_id = rows[0].entry_id
+    photo = _photo(table, players, live, entry_id)
     if photo is None:
         await cb.answer("Couldn't build that team.", show_alert=True)
         return
-    await cb.message.answer_photo(
-        photo, reply_markup=_kb(league_id, event, entry_id, "pitch")
-    )
+    await cb.message.answer_photo(photo, reply_markup=_kb(league_id, table, entry_id))
 
 
-async def _edit(cb: CallbackQuery, engine: LiveEngine, league_id: int,
-                entry_id: int | None, mode: str, step: int) -> None:
-    if not cb.message:
+@router.callback_query(F.data.startswith("tm:"))
+async def on_pick(cb: CallbackQuery, engine: LiveEngine) -> None:
+    parts = (cb.data or "").split(":")
+    if len(parts) < 3 or not cb.message:
         await cb.answer()
         return
+    league_id, entry_id = int(parts[1]), int(parts[2])
     await cb.answer()
     try:
         # Re-resolve the event every tap: a stale event baked into the button
@@ -121,45 +115,18 @@ async def _edit(cb: CallbackQuery, engine: LiveEngine, league_id: int,
         await cb.answer("FPL isn't answering — try again shortly.", show_alert=True)
         return
 
-    target = _pick_entry(table, entry_id, step)
-    if target is None:
-        await cb.answer("No managers to show.", show_alert=True)
-        return
-    photo = _photo(table, players, live, target, mode)
+    photo = _photo(table, players, live, entry_id)
     if photo is None:
         await cb.answer("Couldn't build that team.", show_alert=True)
         return
     try:
         await cb.message.edit_media(
             InputMediaPhoto(media=photo),
-            reply_markup=_kb(league_id, event, target, mode),
+            reply_markup=_kb(league_id, table, entry_id),
         )
     except TelegramBadRequest as exc:
         if "not modified" not in str(exc):
             raise
-
-
-@router.callback_query(F.data.startswith("tmnav:"))
-async def on_nav(cb: CallbackQuery, engine: LiveEngine) -> None:
-    parts = (cb.data or "").split(":")
-    if len(parts) < 6:
-        await cb.answer()
-        return
-    _, league_s, _event, entry_s, mode, direction = parts[:6]
-    step = -1 if direction == "prev" else 1
-    mode = mode if mode in MODES else "pitch"
-    await _edit(cb, engine, int(league_s), int(entry_s), mode, step)
-
-
-@router.callback_query(F.data.startswith("tmmode:"))
-async def on_mode(cb: CallbackQuery, engine: LiveEngine) -> None:
-    parts = (cb.data or "").split(":")
-    if len(parts) < 5:
-        await cb.answer()
-        return
-    _, league_s, _event, entry_s, mode = parts[:5]
-    mode = mode if mode in MODES else "pitch"
-    await _edit(cb, engine, int(league_s), int(entry_s), mode, 0)
 
 
 @router.callback_query(F.data == "tmclose")

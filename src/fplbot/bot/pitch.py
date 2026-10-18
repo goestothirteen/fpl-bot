@@ -20,8 +20,8 @@ from PIL import Image, ImageDraw, ImageFont
 from ..services.models import ManagerLive, Player, PlayerLive
 
 # Pitch geometry (pixels). Drawn once at this resolution with scalable fonts.
-W, H = 960, 1180
-BENCH_H = 190
+W, H = 1200, 1420
+BENCH_H = 230
 PITCH_H = H - BENCH_H
 
 GRASS_DARK = (24, 122, 52)
@@ -37,7 +37,7 @@ HEADER_BG = (12, 16, 20)
 HEADER_TEXT = (255, 255, 255)
 SUB_TEXT = (170, 180, 190)
 
-CARD_W, CARD_H = 160, 104
+CARD_W, CARD_H = 200, 140
 HEADER_H = 92
 
 
@@ -51,9 +51,9 @@ def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageF
 
 FONT_TITLE = _load_font(36, bold=True)
 FONT_SUB = _load_font(26)
-# The name is the dominant element on the card; points are a small chip.
-FONT_NAME = _load_font(40, bold=True)
-FONT_PTS = _load_font(26, bold=True)
+# The name is the dominant element on the card; points are a chip below it.
+FONT_NAME = _load_font(54, bold=True)
+FONT_PTS = _load_font(38, bold=True)
 FONT_BENCH = _load_font(24, bold=True)
 
 ELEMENT_ROWS = (1, 2, 3, 4)   # GK, DEF, MID, FWD
@@ -69,11 +69,11 @@ def _text_centered(draw: ImageDraw.ImageDraw, cx: int, y: int, text: str,
 def _fit_name(draw: ImageDraw.ImageDraw, name: str, max_w: int):  # noqa: ANN202
     """Pick the biggest of a few name fonts that fits `max_w`, so a long name
     shrinks rather than spilling over the card edge."""
-    for size in (40, 34, 28, 24):
+    for size in (54, 46, 38, 30, 26):
         f = _load_font(size, bold=True)
         if draw.textlength(name, font=f) <= max_w:
             return f
-    return _load_font(22, bold=True)
+    return _load_font(24, bold=True)
 
 
 def _draw_card(draw: ImageDraw.ImageDraw, cx: int, cy: int, *,
@@ -89,26 +89,28 @@ def _draw_card(draw: ImageDraw.ImageDraw, cx: int, cy: int, *,
                                fill=CAPTAIN_RING)
     draw.rounded_rectangle((x0, y0, x1, y1), radius=12, fill=body)
 
-    # Captain / vice marker, top-right corner, small.
+    # Captain / vice marker, top-right corner.
     marker = "C" if captain else ("V" if vice else "")
     if marker:
-        draw.ellipse((x1 - 30, y0 + 6, x1 - 6, y0 + 30), fill=PTS_BG)
-        _text_centered(draw, x1 - 18, y0 + 8, marker, HEADER_TEXT, FONT_PTS)
+        draw.ellipse((x1 - 42, y0 + 8, x1 - 8, y0 + 42), fill=PTS_BG)
+        _text_centered(draw, x1 - 25, y0 + 8, marker, HEADER_TEXT, FONT_BENCH)
 
     # Name — the dominant element, vertically centred and auto-sized to fit.
-    name_font = _fit_name(draw, name, CARD_W - 20)
+    name_font = _fit_name(draw, name, CARD_W - 24)
     nbbox = draw.textbbox((0, 0), name, font=name_font)
     nh = nbbox[3] - nbbox[1]
     # Leave room for the points chip at the bottom when played.
-    name_cy = cy - (12 if played else 0)
+    name_cy = cy - (22 if played else 0)
     _text_centered(draw, cx, name_cy - nh // 2 - nbbox[1], name, CARD_TEXT, name_font)
 
     # Points chip — only once the player has actually played.
     if played:
-        chip_w = 60
-        draw.rounded_rectangle((cx - chip_w // 2, y1 - 30, cx + chip_w // 2, y1 - 4),
-                               radius=9, fill=PTS_BG)
-        _text_centered(draw, cx, y1 - 30, f"{points}", PTS_TEXT, FONT_PTS)
+        chip_w, chip_h = 84, 46
+        draw.rounded_rectangle(
+            (cx - chip_w // 2, y1 - chip_h - 4, cx + chip_w // 2, y1 - 4),
+            radius=12, fill=PTS_BG,
+        )
+        _text_centered(draw, cx, y1 - chip_h - 1, f"{points}", PTS_TEXT, FONT_PTS)
 
 
 def _row_y(row_index: int, total_rows: int) -> int:

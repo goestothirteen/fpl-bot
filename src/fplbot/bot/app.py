@@ -18,7 +18,7 @@ from ..live.poller import LivePoller
 from ..logging_conf import configure_logging, get_logger
 from ..scheduler.jobs import build_scheduler
 from ..services.live import LiveEngine
-from .handlers import analysis_cmds, info, live, misc, wager
+from .handlers import analysis_cmds, info, live, misc, teams, wager
 from .handlers import setup as setup_handlers
 from .middlewares import ChatContextMiddleware, ThrottleMiddleware
 
@@ -59,7 +59,7 @@ def build_dispatcher(engine: LiveEngine) -> Dispatcher:
     dp.callback_query.middleware(ChatContextMiddleware())
     dp["engine"] = engine
     for router in (setup_handlers.router, live.router, info.router,
-                   analysis_cmds.router, wager.router, misc.router):
+                   analysis_cmds.router, wager.router, teams.router, misc.router):
         dp.include_router(router)
     return dp
 

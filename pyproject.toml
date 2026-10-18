@@ -19,6 +19,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "uvloop>=0.21; sys_platform != 'win32'",
     "aiohttp>=3.10",
+    "pillow>=11",
 ]
 
 [project.optional-dependencies]

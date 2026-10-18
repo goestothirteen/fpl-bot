@@ -20,8 +20,11 @@ from PIL import Image, ImageDraw, ImageFont
 from ..services.models import ManagerLive, Player, PlayerLive
 
 # Pitch geometry (pixels). Drawn once at this resolution with scalable fonts.
-W, H = 1200, 1420
-BENCH_H = 230
+# Kept deliberately compact: a smaller canvas with tight cards makes each name
+# render larger inside Telegram's fixed-width photo bubble than a big canvas
+# with lots of empty green does.
+W, H = 1040, 1180
+BENCH_H = 210
 PITCH_H = H - BENCH_H
 
 GRASS_DARK = (24, 122, 52)
@@ -37,7 +40,7 @@ HEADER_BG = (12, 16, 20)
 HEADER_TEXT = (255, 255, 255)
 SUB_TEXT = (170, 180, 190)
 
-CARD_W, CARD_H = 200, 140
+CARD_W, CARD_H = 170, 118
 HEADER_H = 92
 
 
@@ -69,7 +72,7 @@ def _text_centered(draw: ImageDraw.ImageDraw, cx: int, y: int, text: str,
 def _fit_name(draw: ImageDraw.ImageDraw, name: str, max_w: int):  # noqa: ANN202
     """Pick the biggest of a few name fonts that fits `max_w`, so a long name
     shrinks rather than spilling over the card edge."""
-    for size in (54, 46, 38, 30, 26):
+    for size in (54, 50, 46, 42, 38, 34, 30, 26):
         f = _load_font(size, bold=True)
         if draw.textlength(name, font=f) <= max_w:
             return f
@@ -96,7 +99,7 @@ def _draw_card(draw: ImageDraw.ImageDraw, cx: int, cy: int, *,
         _text_centered(draw, x1 - 25, y0 + 8, marker, HEADER_TEXT, FONT_BENCH)
 
     # Name — the dominant element, vertically centred and auto-sized to fit.
-    name_font = _fit_name(draw, name, CARD_W - 24)
+    name_font = _fit_name(draw, name, CARD_W - 12)
     nbbox = draw.textbbox((0, 0), name, font=name_font)
     nh = nbbox[3] - nbbox[1]
     # Leave room for the points chip at the bottom when played.

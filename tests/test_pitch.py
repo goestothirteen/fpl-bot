@@ -80,3 +80,78 @@ class TestRenderPitch:
             event=7, league_name="Test League",
         )
         assert png.startswith(PNG_MAGIC)
+
+
+class TestTypography:
+    """The names must be drawn with a real scalable font. The production image
+    (python:*-slim) has no system fonts, and Pillow's silent fallback is a 10px
+    bitmap font — which is exactly how the first release shipped."""
+
+    def test_font_is_scalable_at_the_requested_size(self):
+        from PIL import ImageFont
+
+        from fplbot.bot.pitch import _font
+
+        f = _font(42)
+        assert isinstance(f, ImageFont.FreeTypeFont)
+        assert f.size == 42
+
+    def test_bundled_font_file_ships_with_the_package(self):
+        from fplbot.bot.pitch import _BUNDLED_BOLD
+
+        assert _BUNDLED_BOLD.is_file()
+
+    def test_short_name_is_one_line_at_full_size(self):
+        from PIL import Image, ImageDraw
+
+        from fplbot.bot.pitch import NAME_SIZES, _fit_name
+
+        draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        lines, font = _fit_name(draw, "Raya")
+        assert lines == ["Raya"]
+        assert font.size == NAME_SIZES[0]
+
+    def test_long_hyphenated_name_wraps_instead_of_shrinking(self):
+        from PIL import Image, ImageDraw
+
+        from fplbot.bot.pitch import NAME_SINGLE_MIN, _fit_name
+
+        draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        lines, font = _fit_name(draw, "Alexander-Arnold")
+        assert lines == ["Alexander-", "Arnold"]
+        assert font.size >= NAME_SINGLE_MIN - 8
+
+    def test_initial_prefixed_name_wraps_after_the_dot(self):
+        from PIL import Image, ImageDraw
+
+        from fplbot.bot.pitch import _fit_name
+
+        draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        lines, _ = _fit_name(draw, "B.Fernandes")
+        assert lines == ["B.", "Fernandes"]
+
+    def test_unsplittable_overlong_name_is_clipped_not_overflowing(self):
+        from PIL import Image, ImageDraw
+
+        from fplbot.bot.pitch import NAME_MAX_W, _fit_name
+
+        draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        lines, font = _fit_name(draw, "Abcdefghijklmnopqrstuvwxyz")
+        assert len(lines) == 1 and lines[0].endswith("…")
+        assert draw.textlength(lines[0], font=font) <= NAME_MAX_W
+
+
+class TestLayout:
+    def test_five_wide_row_does_not_overlap(self):
+        from fplbot.bot.pitch import CARD_W, W, _row_centres
+
+        xs = _row_centres(5)
+        assert all(b - a >= CARD_W for a, b in zip(xs, xs[1:], strict=False))
+        assert xs[0] - CARD_W // 2 >= 0 and xs[-1] + CARD_W // 2 <= W
+
+    def test_captain_card_shows_doubled_points(self):
+        from fplbot.bot.pitch import _card_points
+
+        assert _card_points(_pick(10, 10, 2, captain=True), live(10, minutes=90, points=12)) == 24
+        assert _card_points(_pick(12, 12, 0), live(12, minutes=90, points=3)) == 3   # bench: raw
+        assert _card_points(_pick(1, 1, 1), None) == 0

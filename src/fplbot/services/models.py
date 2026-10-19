@@ -33,6 +33,7 @@ class Team:
     id: int
     name: str
     short_name: str
+    code: int = 0            # FPL's stable club code, used for shirt images
 
 
 @dataclass(frozen=True, slots=True)

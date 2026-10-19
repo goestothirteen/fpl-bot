@@ -25,8 +25,9 @@ from ...fpl.errors import UpstreamUnavailable
 from ...logging_conf import get_logger
 from ...services.live import LiveEngine
 from ...services.models import LiveTable
-from ...services.parsing import parse_live, parse_players
-from ..pitch import render_pitch
+from ...services.parsing import parse_live, parse_players, parse_teams
+from ..pitch import render_pitch, shirt_keys
+from ..shirts import fetch_shirts
 
 router = Router(name="teams")
 log = get_logger(__name__)
@@ -57,16 +58,24 @@ async def _table(engine: LiveEngine, league_id: int, event: int):  # noqa: ANN20
     table = await engine.build_table(league_id, event)
     bootstrap = await engine.client.bootstrap()
     players = parse_players(bootstrap)
+    teams = parse_teams(bootstrap)
     live = parse_live(await engine.client.live(event))
-    return table, players, live
+    return table, players, teams, live
 
 
-def _photo(table: LiveTable, players, live, entry_id: int):  # noqa: ANN202
+async def _photo(table: LiveTable, players, teams, live, entry_id: int):  # noqa: ANN202
     row = next((r for r in table.rows if r.entry_id == entry_id), None)
     if row is None:
         return None
+    # The renderer keys shirts by (team id, is_gk); FPL serves them by club
+    # code. Translate, fetch (cached after the first view), translate back.
+    # Anything that couldn't be fetched is simply left out: the renderer draws
+    # a plain shirt for it rather than failing the whole picture.
+    wanted = {(teams[t].code, gk): (t, gk) for t, gk in shirt_keys(row, players) if t in teams}
+    fetched = await fetch_shirts(set(wanted))
+    shirts = {wanted[k]: png for k, png in fetched.items()}
     png = render_pitch(
-        row, players, live, event=table.event, league_name=table.league_name
+        row, players, live, event=table.event, league_name=table.league_name, shirts=shirts
     )
     return BufferedInputFile(png, filename=f"pitch_{entry_id}.png")
 
@@ -81,7 +90,7 @@ async def on_open(cb: CallbackQuery, engine: LiveEngine) -> None:
     await cb.answer("Drawing the pitch…")
     try:
         event = await engine.resolve_event()
-        table, players, live = await _table(engine, league_id, event)
+        table, players, teams, live = await _table(engine, league_id, event)
     except UpstreamUnavailable:
         await cb.answer("FPL isn't answering — try again shortly.", show_alert=True)
         return
@@ -91,7 +100,7 @@ async def on_open(cb: CallbackQuery, engine: LiveEngine) -> None:
         await cb.answer("No managers in this league yet.", show_alert=True)
         return
     entry_id = rows[0].entry_id
-    photo = _photo(table, players, live, entry_id)
+    photo = await _photo(table, players, teams, live, entry_id)
     if photo is None:
         await cb.answer("Couldn't build that team.", show_alert=True)
         return
@@ -110,12 +119,12 @@ async def on_pick(cb: CallbackQuery, engine: LiveEngine) -> None:
         # Re-resolve the event every tap: a stale event baked into the button
         # would pin the wrong gameweek for ever (same reason as the text router).
         event = await engine.resolve_event()
-        table, players, live = await _table(engine, league_id, event)
+        table, players, teams, live = await _table(engine, league_id, event)
     except UpstreamUnavailable:
         await cb.answer("FPL isn't answering — try again shortly.", show_alert=True)
         return
 
-    photo = _photo(table, players, live, entry_id)
+    photo = await _photo(table, players, teams, live, entry_id)
     if photo is None:
         await cb.answer("Couldn't build that team.", show_alert=True)
         return

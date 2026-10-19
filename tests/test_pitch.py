@@ -101,44 +101,70 @@ class TestTypography:
 
         assert _BUNDLED_BOLD.is_file()
 
-    def test_short_name_is_one_line_at_full_size(self):
-        from PIL import Image, ImageDraw
 
-        from fplbot.bot.pitch import NAME_SIZES, _fit_name
+def _draw():  # noqa: ANN202
+    from PIL import Image, ImageDraw
 
-        draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
-        lines, font = _fit_name(draw, "Raya")
+    return ImageDraw.Draw(Image.new("RGB", (10, 10)))
+
+
+class TestNameFit:
+    """Every name renders at the one shared size; long ones wrap or condense."""
+
+    def test_short_name_is_one_line_at_the_shared_size(self):
+        from fplbot.bot.pitch import NAME_SIZE, _fit_name
+
+        lines, font = _fit_name(_draw(), "Raya")
         assert lines == ["Raya"]
-        assert font.size == NAME_SIZES[0]
+        assert font.size == NAME_SIZE
 
-    def test_long_hyphenated_name_wraps_instead_of_shrinking(self):
-        from PIL import Image, ImageDraw
+    def test_long_hyphenated_name_wraps_at_the_hyphen(self):
+        from fplbot.bot.pitch import NAME_SIZE, _fit_name
 
-        from fplbot.bot.pitch import NAME_SINGLE_MIN, _fit_name
-
-        draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
-        lines, font = _fit_name(draw, "Alexander-Arnold")
+        lines, font = _fit_name(_draw(), "Alexander-Arnold")
         assert lines == ["Alexander-", "Arnold"]
-        assert font.size >= NAME_SINGLE_MIN - 8
+        assert font.size == NAME_SIZE
 
     def test_initial_prefixed_name_wraps_after_the_dot(self):
-        from PIL import Image, ImageDraw
+        from fplbot.bot.pitch import NAME_SIZE, _fit_name
 
-        from fplbot.bot.pitch import _fit_name
+        lines, font = _fit_name(_draw(), "N.Williams")
+        assert lines == ["N.", "Williams"]
+        assert font.size == NAME_SIZE
 
-        draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
-        lines, _ = _fit_name(draw, "B.Fernandes")
-        assert lines == ["B.", "Fernandes"]
+    def test_two_word_name_wraps_at_the_space(self):
+        from fplbot.bot.pitch import NAME_SIZE, _fit_name
 
-    def test_unsplittable_overlong_name_is_clipped_not_overflowing(self):
-        from PIL import Image, ImageDraw
+        lines, font = _fit_name(_draw(), "João Pedro")
+        assert lines == ["João", "Pedro"]
+        assert font.size == NAME_SIZE
 
-        from fplbot.bot.pitch import NAME_MAX_W, _fit_name
+    def test_mild_overflow_condenses_one_line_rather_than_wrapping_awkwardly(self):
+        # "Fernandes" alone is already too wide for a clean split, so the whole
+        # name stays on one line, condensed, at the shared size.
+        from fplbot.bot.pitch import NAME_SIZE, _fit_name
 
-        draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        lines, font = _fit_name(_draw(), "B.Fernandes")
+        assert lines == ["B.Fernandes"]
+        assert font.size == NAME_SIZE
+
+    def test_long_single_word_is_condensed_not_shrunk(self):
+        from fplbot.bot.pitch import MAX_CONDENSE, NAME_MAX_W, NAME_SIZE, _fit_name
+
+        draw = _draw()
+        for name in ("Szoboszlai", "Richarlison", "Branthwaite"):
+            lines, font = _fit_name(draw, name)
+            assert lines == [name], name
+            assert font.size == NAME_SIZE, name
+            assert draw.textlength(name, font=font) <= NAME_MAX_W / MAX_CONDENSE, name
+
+    def test_hopeless_name_is_clipped_not_overflowing(self):
+        from fplbot.bot.pitch import MAX_CONDENSE, NAME_MAX_W, _fit_name
+
+        draw = _draw()
         lines, font = _fit_name(draw, "Abcdefghijklmnopqrstuvwxyz")
         assert len(lines) == 1 and lines[0].endswith("…")
-        assert draw.textlength(lines[0], font=font) <= NAME_MAX_W
+        assert draw.textlength(lines[0], font=font) <= NAME_MAX_W / MAX_CONDENSE
 
 
 class TestLayout:
@@ -149,9 +175,46 @@ class TestLayout:
         assert all(b - a >= CARD_W for a, b in zip(xs, xs[1:], strict=False))
         assert xs[0] - CARD_W // 2 >= 0 and xs[-1] + CARD_W // 2 <= W
 
+    def test_rows_fit_inside_the_pitch(self):
+        from fplbot.bot.pitch import PITCH_BOTTOM, PITCH_TOP, SHIRT_H, _row_top, card_h
+
+        tops = [_row_top(i) for i in range(4)]
+        assert tops[0] >= PITCH_TOP
+        assert tops[-1] + card_h(SHIRT_H) <= PITCH_BOTTOM
+        assert all(b - a >= card_h(SHIRT_H) for a, b in zip(tops, tops[1:], strict=False))
+
     def test_captain_card_shows_doubled_points(self):
         from fplbot.bot.pitch import _card_points
 
         assert _card_points(_pick(10, 10, 2, captain=True), live(10, minutes=90, points=12)) == 24
         assert _card_points(_pick(12, 12, 0), live(12, minutes=90, points=3)) == 3   # bench: raw
         assert _card_points(_pick(1, 1, 1), None) == 0
+
+
+def _shirt_png() -> bytes:
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGBA", (220, 290), (200, 30, 30, 255)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+class TestShirts:
+    def test_shirt_keys_cover_the_whole_squad_by_team_and_kit(self):
+        from fplbot.bot.pitch import shirt_keys
+
+        keys = shirt_keys(_manager(_full_squad()), _players())
+        assert (1, True) in keys          # the GK, goalkeeper kit
+        assert (12, True) in keys         # bench GK too
+        assert (2, False) in keys
+        assert len(keys) == 15            # demo data: one team per player
+
+    def test_renders_with_real_missing_and_corrupt_shirts(self):
+        shirts = {(1, True): _shirt_png(), (2, False): b"not a png"}
+        png = render_pitch(
+            _manager(_full_squad()), _players(), _live(),
+            event=7, league_name="Test League", shirts=shirts,
+        )
+        assert png.startswith(PNG_MAGIC)

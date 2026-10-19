@@ -26,7 +26,7 @@ def _f(value: object, default: float = 0.0) -> float:
 
 def parse_teams(bootstrap: dict) -> dict[int, Team]:
     return {
-        t["id"]: Team(id=t["id"], name=t["name"], short_name=t["short_name"])
+        t["id"]: Team(id=t["id"], name=t["name"], short_name=t["short_name"], code=t.get("code", 0))
         for t in bootstrap.get("teams", [])
     }
 

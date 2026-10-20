@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from ..fpl.client import FPLClient
+from ..fpl.errors import UpstreamUnavailable
 from ..logging_conf import get_logger
 from .models import (
     Fixture,
@@ -139,6 +140,18 @@ class LiveEngine:
         meta, entries = await self.client.all_classic_entries(
             league_id, limit=limit or self.MAX_MANAGERS
         )
+        # On 2026-10-20 FPL's standings endpoint served other people's
+        # mini-leagues under our league's id and name for three polls in a
+        # row. Those strangers became "new leaders" and wager rows. Refuse a
+        # page that cannot be ours, and drop it from the cache so the next poll
+        # asks FPL again instead of trusting the same bad payload for ten
+        # minutes.
+        reason = foreign_standings(league_id, meta, entries, await self._known_members(league_id))
+        if reason:
+            log.warning("live.standings_rejected", league=league_id, reason=reason,
+                        entries=[e.get("entry") for e in entries][:10])
+            await self.client.cache.invalidate(f"standings:{league_id}:1:1")
+            raise UpstreamUnavailable(f"standings for league {league_id} rejected: {reason}")
         players, _teams, live, fixtures, provisional, age = await self.snapshot(event)
 
         picks_by_entry = await self.client.many_picks([e["entry"] for e in entries], event)
@@ -187,6 +200,20 @@ class LiveEngine:
             team_state=team_state,
         )
 
+    async def _known_members(self, league_id: int) -> set[int]:
+        """Entry ids this league had when it was linked. Empty when unknown,
+        which switches the membership check off rather than rejecting
+        everything."""
+        from ..db import repo  # local import: the engine is otherwise DB-free
+        from ..db.session import session_scope
+
+        try:
+            async with session_scope() as s:
+                return {m.entry_id for m in await repo.league_members(s, league_id)}
+        except Exception as exc:  # noqa: BLE001 - a DB blip must not block a table
+            log.warning("live.known_members_failed", league=league_id, error=str(exc))
+            return set()
+
     async def resolve_event(self) -> int:
         bootstrap = await self.client.bootstrap()
         state = parse_game_state(bootstrap)
@@ -196,6 +223,27 @@ class LiveEngine:
 
 
 # ── pure helpers, unit-tested without a network ────────────────────────────
+def foreign_standings(
+    league_id: int, meta: dict, entries: list[dict], known: set[int]
+) -> str | None:
+    """Why a standings page cannot belong to `league_id`, or None if it can.
+
+    Two checks. The league block must carry our id. And when we know who is in
+    the league, at least one of them must be on the page: a new joiner adds a
+    row, a leaver removes one, but a page with *nobody* we recognise is some
+    other league's table wearing our name.
+    """
+    got = meta.get("id")
+    if got is not None and int(got) != int(league_id):
+        return f"league id {got} != {league_id}"
+    if not known:
+        return None
+    present = {e.get("entry") for e in entries}
+    if not (present & known):
+        return "no known member on the page"
+    return None
+
+
 def fixture_state_by_team(fixtures: list[Fixture]) -> dict[int, FixtureState]:
     """Least-advanced state per team, so a double gameweek counts as unfinished
     until *both* fixtures are done."""

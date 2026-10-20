@@ -297,6 +297,20 @@ async def store_gw_results(
             )
         )
 
+    # An upsert never forgets. One poll fed a foreign standings page left
+    # strangers in a provisional week for good, ranked and paid alongside the
+    # real members. The week is whoever is in *this* table, so anyone else
+    # goes.
+    written = [r["entry_id"] for r in rows]
+    if written:
+        await s.execute(
+            delete(GWResult).where(
+                GWResult.league_id == league_id,
+                GWResult.event == event,
+                GWResult.entry_id.notin_(written),
+            )
+        )
+
 
 async def provisional_events(s: AsyncSession) -> list[int]:
     """Gameweeks with any provisional row, across all leagues — the poller's

@@ -403,7 +403,7 @@ def render_wager_table(ledger) -> str:  # noqa: ANN001
             else f"GW{ledger.events[0]}–{ledger.events[-1]}")
     foot = f"<i>{span} · {len(ledger.events)} gameweek(s) settled"
     foot += " · season adjustment applied</i>" if ledger.season_amounts else "</i>"
-    foot += "\n<i><code>/wager grid</code> for the week-by-week table.</i>"
+    foot += "\n<i><code>/tally</code> for the week-by-week table.</i>"
     if ledger.provisional:
         weeks = ", ".join(f"GW{e}" for e in sorted(ledger.provisional))
         foot += (

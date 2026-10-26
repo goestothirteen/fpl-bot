@@ -36,7 +36,8 @@ HELP = """<b>FPL mini-league bot</b>
 /awards — gameweek awards
 
 <b>Side-bet</b>
-/wager — balances · /wager grid — week-by-week table · /wager 7 — one gameweek
+/wager — balances · /wager 7 — one gameweek
+/tally — the whole season as one week-by-week table
 /settle — who owes whom
 
 <b>Alerts</b>

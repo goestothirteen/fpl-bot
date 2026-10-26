@@ -30,6 +30,7 @@ COMMANDS = [
     ("left", "Who each team is still waiting on"),
     ("edge", "Unique players you still have to play"),
     ("wager", "League side-bet balances"),
+    ("tally", "Side-bet, week by week, as one table"),
     ("settle", "Who owes whom"),
     ("diff", "Differentials, or head-to-head"),
     ("captains", "Captain spread and returns"),

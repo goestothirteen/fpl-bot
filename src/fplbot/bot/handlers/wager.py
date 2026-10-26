@@ -1,4 +1,4 @@
-"""The league side-bet: /wager, /wager grid, /wager <gw>, /wager all, /settle."""
+"""The league side-bet: /wager, /tally, /wager <gw>, /wager all, /settle."""
 from __future__ import annotations
 
 from aiogram import Router
@@ -44,6 +44,40 @@ async def _ledger(message: Message, engine: LiveEngine, default_league):  # noqa
     return await ledger_svc.with_season(engine, built, total_events=SEASON_EVENTS)
 
 
+async def _send_grid(message: Message, note: Message, led) -> None:  # noqa: ANN001
+    """The whole season on one picture: a row per gameweek, a column per
+    manager, totals underneath. Telegram can't turn a text message into a
+    photo, so the placeholder goes and the grid arrives as its own message."""
+    if not led.events:
+        await note.edit_text(render_wager_table(led))
+        return
+    span = (f"GW{led.events[0]}" if len(led.events) == 1
+            else f"GW{led.events[0]}–{led.events[-1]}")
+    caption = f"💰 <b>{esc(led.league_name)}</b> · wager, week by week · {span}"
+    if led.provisional:
+        weeks = ", ".join(f"GW{e}" for e in sorted(led.provisional))
+        caption += f"\n<i>⏳ {weeks} provisional — can still change.</i>"
+    png = render_wager_grid(led)
+    await note.delete()
+    await message.answer_photo(
+        BufferedInputFile(png, filename=f"wager_{led.league_id}.png"), caption=caption,
+    )
+
+
+@router.message(Command("tally", "grid", "ledger"))
+async def cmd_tally(message: Message, engine: LiveEngine, default_league) -> None:  # noqa: ANN001
+    note = await message.answer("💰 Drawing the tally…")
+    try:
+        led = await _ledger(message, engine, default_league)
+    except UpstreamUnavailable:
+        await note.edit_text("FPL isn't answering right now — try again shortly.")
+        return
+    if led is None:
+        await note.delete()
+        return
+    await _send_grid(message, note, led)
+
+
 @router.message(Command("wager", "money", "bet"))
 async def cmd_wager(message: Message, command: CommandObject, engine: LiveEngine,
                     default_league) -> None:  # noqa: ANN001
@@ -58,24 +92,8 @@ async def cmd_wager(message: Message, command: CommandObject, engine: LiveEngine
         await note.delete()
         return
 
-    if arg in {"grid", "table", "weeks", "history"}:
-        # The whole season on one picture: a row per gameweek, a column per
-        # manager, totals underneath. Telegram can't turn a text message into a
-        # photo, so the placeholder goes and the grid arrives as its own message.
-        if not led.events:
-            await note.edit_text(render_wager_table(led))
-            return
-        span = (f"GW{led.events[0]}" if len(led.events) == 1
-                else f"GW{led.events[0]}–{led.events[-1]}")
-        caption = f"💰 <b>{esc(led.league_name)}</b> · wager, week by week · {span}"
-        if led.provisional:
-            weeks = ", ".join(f"GW{e}" for e in sorted(led.provisional))
-            caption += f"\n<i>⏳ {weeks} provisional — can still change.</i>"
-        png = render_wager_grid(led)
-        await note.delete()
-        await message.answer_photo(
-            BufferedInputFile(png, filename=f"wager_{led.league_id}.png"), caption=caption,
-        )
+    if arg in {"grid", "table", "weeks", "history", "tally"}:
+        await _send_grid(message, note, led)
         return
 
     if arg in {"all", "full", "verbose"}:

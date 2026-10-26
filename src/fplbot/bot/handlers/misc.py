@@ -35,6 +35,10 @@ HELP = """<b>FPL mini-league bot</b>
 /fixtures [TEAM] — next five fixtures
 /awards — gameweek awards
 
+<b>Side-bet</b>
+/wager — balances · /wager grid — week-by-week table · /wager 7 — one gameweek
+/settle — who owes whom
+
 <b>Alerts</b>
 /settings — all · big-moments · digest-only · off
 /topic — run it inside a forum topic to send my alerts only there

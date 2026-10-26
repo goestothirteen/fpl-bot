@@ -1,9 +1,9 @@
-"""The league side-bet: /wager, /wager <gw>, /wager all, /settle."""
+"""The league side-bet: /wager, /wager grid, /wager <gw>, /wager all, /settle."""
 from __future__ import annotations
 
 from aiogram import Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import BufferedInputFile, Message
 
 from ...db import repo
 from ...db.session import session_scope
@@ -18,6 +18,7 @@ from ..formatting import (
     render_wager_table,
     render_wager_week,
 )
+from ..wager_grid import render_wager_grid
 
 router = Router(name="wager")
 log = get_logger(__name__)
@@ -55,6 +56,26 @@ async def cmd_wager(message: Message, command: CommandObject, engine: LiveEngine
         return
     if led is None:
         await note.delete()
+        return
+
+    if arg in {"grid", "table", "weeks", "history"}:
+        # The whole season on one picture: a row per gameweek, a column per
+        # manager, totals underneath. Telegram can't turn a text message into a
+        # photo, so the placeholder goes and the grid arrives as its own message.
+        if not led.events:
+            await note.edit_text(render_wager_table(led))
+            return
+        span = (f"GW{led.events[0]}" if len(led.events) == 1
+                else f"GW{led.events[0]}–{led.events[-1]}")
+        caption = f"💰 <b>{esc(led.league_name)}</b> · wager, week by week · {span}"
+        if led.provisional:
+            weeks = ", ".join(f"GW{e}" for e in sorted(led.provisional))
+            caption += f"\n<i>⏳ {weeks} provisional — can still change.</i>"
+        png = render_wager_grid(led)
+        await note.delete()
+        await message.answer_photo(
+            BufferedInputFile(png, filename=f"wager_{led.league_id}.png"), caption=caption,
+        )
         return
 
     if arg in {"all", "full", "verbose"}:

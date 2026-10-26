@@ -403,6 +403,7 @@ def render_wager_table(ledger) -> str:  # noqa: ANN001
             else f"GW{ledger.events[0]}–{ledger.events[-1]}")
     foot = f"<i>{span} · {len(ledger.events)} gameweek(s) settled"
     foot += " · season adjustment applied</i>" if ledger.season_amounts else "</i>"
+    foot += "\n<i><code>/wager grid</code> for the week-by-week table.</i>"
     if ledger.provisional:
         weeks = ", ".join(f"GW{e}" for e in sorted(ledger.provisional))
         foot += (
@@ -421,7 +422,7 @@ def render_settlement(ledger, payments: list[tuple[int, int, int]]) -> str:  # n
     for payer, payee, cents in payments:
         from_team = ledger.names.get(payer, (str(payer), ""))[0]
         to_team = ledger.names.get(payee, (str(payee), ""))[0]
-        from .. services.wager import money
+        from ..services.wager import money
         lines.append(
             f"<b>{esc(clip(from_team, 24))}</b> → <b>{esc(clip(to_team, 24))}</b>"
             f"\n     {money(cents, signed=False)}"

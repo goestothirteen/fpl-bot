@@ -138,11 +138,11 @@ def awards(table: LiveTable, players: dict[int, Player], live: dict[int, PlayerL
         return []
     out: list[Award] = []
 
-    best = max(rows, key=lambda r: r.net_points)
-    out.append(Award("🏆 Manager of the Week", best.team_name, f"{best.net_points} pts"))
+    best = max(rows, key=lambda r: r.gw_points)
+    out.append(Award("🏆 Manager of the Week", best.team_name, f"{best.gw_points} pts"))
 
-    worst = min(rows, key=lambda r: r.net_points)
-    out.append(Award("💩 Wooden Spoon", worst.team_name, f"{worst.net_points} pts"))
+    worst = min(rows, key=lambda r: r.gw_points)
+    out.append(Award("💩 Wooden Spoon", worst.team_name, f"{worst.gw_points} pts"))
 
     bench = max(rows, key=lambda r: r.bench_points)
     if bench.bench_points > 0:

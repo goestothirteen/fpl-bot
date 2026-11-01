@@ -134,14 +134,14 @@ async def build(engine, league_id: int, league_name: str) -> Ledger | None:  # n
 
     for event in events:
         rows = stored[event]
-        scores = [(r.entry_id, r.net_points) for r in rows]
+        scores = [(r.entry_id, r.points) for r in rows]
         places = wager.positions(scores)
         # A hand-agreed gameweek replaces the ladder outright.
         override = wager.override_for(league_id, event)
         amounts = dict(override) if override else wager.settle(scheme, scores, season=False)
 
         week: list[WeekRow] = []
-        for r in sorted(rows, key=lambda x: (-x.net_points, x.entry_id)):
+        for r in sorted(rows, key=lambda x: (-x.points, x.entry_id)):
             cents = amounts.get(r.entry_id, 0)
             balances[r.entry_id] = balances.get(r.entry_id, 0) + cents
             team, manager = names.get(r.entry_id, (str(r.entry_id), ""))
@@ -150,7 +150,7 @@ async def build(engine, league_id: int, league_name: str) -> Ledger | None:  # n
                     entry_id=r.entry_id,
                     team_name=team,
                     manager_name=manager,
-                    points=r.net_points,
+                    points=r.points,
                     position=places.get(r.entry_id, 0),
                     amount=cents,
                     balance=balances[r.entry_id],

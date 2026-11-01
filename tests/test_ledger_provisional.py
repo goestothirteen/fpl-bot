@@ -24,8 +24,8 @@ MEMBERS = [
 ]
 
 
-def row(entry_id: int, net_points: int, *, provisional: bool):
-    return SimpleNamespace(entry_id=entry_id, net_points=net_points, provisional=provisional)
+def row(entry_id: int, points: int, *, provisional: bool):
+    return SimpleNamespace(entry_id=entry_id, points=points, provisional=provisional)
 
 
 @pytest.fixture

@@ -57,7 +57,7 @@ def _summary(rows: list[ManagerLive]) -> list[str]:
         gap = rows[0].live_total - rows[1].live_total
         leader = clip(rows[0].team_name, 24)
         out.append(f"{leader} leads by {gap}" if gap else f"{leader} level at the top")
-    out.append(f"avg {sum(r.net_points for r in rows) / len(rows):.1f}")
+    out.append(f"avg {sum(r.gw_points for r in rows) / len(rows):.1f}")
     if bench := sum(r.bench_points for r in rows):
         out.append(f"{bench} benched")
     if on_pitch := sum(r.in_play for r in rows):
@@ -88,7 +88,7 @@ def render_live_cards(
     blocks = []
     for i, r in enumerate(rows, 1):
         rank = MEDALS.get(i, f"<b>{i}</b>")
-        title = f"{rank} <b>{esc(clip(r.team_name, 28))}</b> — <b>{r.net_points}</b>"
+        title = f"{rank} <b>{esc(clip(r.team_name, 28))}</b> — <b>{r.gw_points}</b>"
         chip = CHIP_LABEL.get(r.active_chip or "", "")
         if chip:
             title += f" · {chip}"
@@ -134,7 +134,7 @@ def render_season_table(table: LiveTable, limit: int = 25) -> str:
         bits = []
         if r.manager_name and r.manager_name != "?":
             bits.append(clip(r.manager_name, 22))
-        bits.append(f"GW{table.event} {r.net_points:+d}")
+        bits.append(f"GW{table.event} {r.gw_points:+d}")
         gap = rows[0].live_total - r.live_total
         if gap:
             bits.append(f"{gap} behind")
@@ -150,7 +150,7 @@ def render_remaining_detail(
     table: LiveTable, players: dict[int, Player], limit: int = 25
 ) -> str:
     """Who each manager is still waiting on, by name."""
-    rows = sorted(table.ranked_gw()[:limit], key=lambda r: (-r.remaining, -r.net_points))
+    rows = sorted(table.ranked_gw()[:limit], key=lambda r: (-r.remaining, -r.gw_points))
     head = f"⏳ <b>Still to come</b> · GW{table.event}"
     if not table.team_state:
         return f"{head}\nNo fixture data yet."

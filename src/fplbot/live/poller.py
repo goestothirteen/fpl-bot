@@ -237,7 +237,7 @@ class LivePoller:
             {
                 "entry_id": r.entry_id,
                 "points": r.gw_points,
-                "net_points": r.net_points,
+                "net_points": r.gw_points - r.transfer_cost,
                 "rank": i + 1,
                 "bench_points": r.bench_points,
                 "transfer_cost": r.transfer_cost,

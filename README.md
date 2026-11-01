@@ -15,9 +15,9 @@ Sunday League FC · GW4
 │  1  Ten Hag's Lads   62    284   2 │
 │  2  Sonny Delight    58    281   3 │
 │  3  Klopp Fiction TC 57↑   279   1 │
-│  4  Mark's XI        41*   266   4 │
+│  4  Mark's XI        45*   266   4 │
 └──────────────────────────────────┘
-* after hit · ↑ auto-sub projected · live
+* took a hit (comes off Tot, as on FPL) · ↑ auto-sub projected · live
 ```
 
 ## Quick start

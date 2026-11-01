@@ -354,9 +354,9 @@ def _draw_pitch(draw: ImageDraw.ImageDraw) -> None:
 def _draw_header(draw: ImageDraw.ImageDraw, manager: ManagerLive, event: int) -> None:
     draw.rectangle((0, 0, W, HEADER_H), fill=HEADER_BG)
 
-    # Right: the running net GW score, big.
+    # Right: the running GW score, big — whole, as FPL shows it; the hit is a detail line.
     unit_w = draw.textlength("pts", font=FONT_SCORE_UNIT)
-    score = str(manager.net_points)
+    score = str(manager.gw_points)
     draw.text((W - MARGIN, 62), "pts", font=FONT_SCORE_UNIT, fill=SUB_TEXT, anchor="rs")
     draw.text((W - MARGIN - unit_w - 10, 62), score, font=FONT_SCORE, fill=PTS_TEXT, anchor="rs")
     score_w = draw.textlength(score, font=FONT_SCORE) + unit_w + 10

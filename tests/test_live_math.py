@@ -56,10 +56,12 @@ class TestManagerRow:
         assert row.captain_element == 10
         assert row.captain_points == 4
 
-    def test_transfer_hit_subtracted_from_net_only(self, squad, players):
-        row = self._row(squad, players, transfers_cost=8)
+    def test_transfer_hit_only_touches_the_season_total(self, squad, players):
+        # FPL shows the gameweek score whole and takes the hit off the overall
+        # total; the weekly table and the wager match that.
+        row = self._row(squad, players, transfers_cost=8, total=100, points=40)
         assert row.gw_points == 24
-        assert row.net_points == 16
+        assert row.live_total == 60 + 24 - 8
 
     def test_bench_boost_counts_the_bench(self, squad, players):
         boosted = [
@@ -97,7 +99,7 @@ class TestManagerRow:
     def test_season_total_excludes_the_current_gameweek(self, squad, players):
         row = self._row(squad, players, total=100, points=40)
         assert row.season_total_before == 60
-        assert row.live_total == 60 + row.net_points
+        assert row.live_total == 60 + row.gw_points
 
     def test_predicted_sub_swaps_the_points(self, squad, players):
         lv = {i: live(i, points=2) for i in range(1, 16)}

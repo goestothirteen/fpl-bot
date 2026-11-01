@@ -109,7 +109,7 @@ async def cmd_form(message: Message, engine: LiveEngine, default_league) -> None
     for m in members[:30]:
         history = await engine.client.entry_history(m.entry_id)
         recent = [h for h in history.get("current", []) if h["event"] > max(0, event - 4)]
-        pts = sum(h["points"] - h.get("event_transfers_cost", 0) for h in recent)
+        pts = sum(h["points"] for h in recent)  # FPL's GW score; hits only touch the season total
         rows.append((m.team_name, pts, len(recent)))
     rows.sort(key=lambda t: -t[1])
 

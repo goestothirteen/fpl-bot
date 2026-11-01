@@ -146,7 +146,7 @@ class ManagerLive:
     active_chip: str | None
     transfer_cost: int
     season_total_before: int      # total_points at end of previous GW
-    gw_points: int = 0            # gross, before hit
+    gw_points: int = 0            # the gameweek score as FPL shows it; hits don't touch it
     bench_points: int = 0
     captain_element: int | None = None
     captain_points: int = 0
@@ -159,22 +159,21 @@ class ManagerLive:
     chip_points: int = 0          # points attributable to an active chip
 
     @property
-    def net_points(self) -> int:
-        return self.gw_points - self.transfer_cost
-
-    @property
     def base_points(self) -> int:
-        """Net points with the chip's contribution stripped out.
+        """Gameweek points with the chip's contribution stripped out.
 
         A bench boost folds four extra players into the same total, so the raw
         score can't be compared against a manager who didn't play one. This is
         the number to settle a side-bet on.
         """
-        return self.net_points - self.chip_points
+        return self.gw_points - self.chip_points
 
     @property
     def live_total(self) -> int:
-        return self.season_total_before + self.net_points
+        """Season total. FPL takes transfer hits off here and only here — the
+        gameweek score on its site stays whole and the hit is a separate line,
+        so every weekly table and the wager follow the same convention."""
+        return self.season_total_before + self.gw_points - self.transfer_cost
 
     @property
     def remaining(self) -> int:
@@ -194,13 +193,13 @@ class LiveTable:
 
     def ranked(self) -> list[ManagerLive]:
         """Season standings — cumulative total first."""
-        return sorted(self.rows, key=lambda m: (-m.live_total, -m.net_points, m.team_name))
+        return sorted(self.rows, key=lambda m: (-m.live_total, -m.gw_points, m.team_name))
 
     def ranked_gw(self) -> list[ManagerLive]:
         """This gameweek only. `/live` shows GW points, so it must order by them
         too — ordering by season total while displaying GW points put the rows
         in an order the numbers didn't explain."""
-        return sorted(self.rows, key=lambda m: (-m.net_points, -m.live_total, m.team_name))
+        return sorted(self.rows, key=lambda m: (-m.gw_points, -m.live_total, m.team_name))
 
 
 @dataclass(frozen=True, slots=True)

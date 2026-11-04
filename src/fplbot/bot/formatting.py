@@ -11,6 +11,7 @@ import html
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+from ..services import value as value_svc
 from ..services.analysis import Award, Ownership
 from ..services.models import (
     FixtureState,
@@ -20,6 +21,7 @@ from ..services.models import (
     Player,
     PlayerLive,
 )
+from ..services.value import SquadValue, money
 
 CHIP_LABEL = {
     "3xc": "TC",
@@ -431,3 +433,56 @@ def render_settlement(ledger, payments: list[tuple[int, int, int]]) -> str:  # n
         f"{head}\n\n" + "\n\n".join(lines)
         + f"\n\n<i>{len(payments)} transfer(s) clears every balance</i>"
     )
+
+
+def render_squad_values(league_name: str, event: int, values: list[SquadValue],
+                        limit: int = 25, unreachable: int = 0) -> str:
+    """Team value per manager — richest first — with how they got there."""
+    head = f"💷 <b>{esc(league_name)}</b> · team value after GW{event}"
+    rows = value_svc.ranked(values)[:limit]
+    if not rows:
+        return f"{head}\n\nNo value data yet — FPL writes it after the first deadline."
+
+    blocks = []
+    for i, v in enumerate(rows, 1):
+        rank = MEDALS.get(i, f"<b>{i}</b>")
+        title = f"{rank} <b>{esc(clip(v.team_name, 28))}</b> — <b>{money(v.value)}</b>"
+
+        line1 = []
+        if v.manager_name and v.manager_name != "?":
+            line1.append(clip(v.manager_name, 22))
+        line1.append(f"squad {money(v.squad)}")
+        line1.append(f"bank {money(v.bank)}")
+        line1.append(f"{money(v.profit, signed=True)} since GW1")
+        if v.week_delta is not None and v.week_delta:
+            arrow = "▲" if v.week_delta > 0 else "▼"
+            line1.append(f"{arrow} {money(abs(v.week_delta))} this week")
+
+        line2 = [f"{v.transfers} transfer{'s' if v.transfers != 1 else ''}"]
+        line2.append(f"−{v.hits} in hits" if v.hits else "no hits")
+        if v.held_buys:
+            line2.append(f"buys {money(v.buy_gain, signed=True)}")
+            if best := v.best_buy:
+                line2.append(f"best {clip(best.name, 12)} {money(best.gain, signed=True)}")
+            if worst := v.worst_buy:
+                line2.append(f"worst {clip(worst.name, 12)} {money(worst.gain, signed=True)}")
+
+        blocks.append(
+            f"{title}\n     {esc(' · '.join(line1))}\n     {esc(' · '.join(line2))}"
+        )
+
+    out = f"{head}\n\n" + "\n\n".join(blocks)
+    summary = []
+    if len(rows) > 1:
+        gap = rows[0].value - rows[-1].value
+        summary.append(f"richest to poorest {money(gap)}")
+    summary.append(f"league average {money(round(sum(v.value for v in rows) / len(rows)))}")
+    if hits := sum(v.hits for v in rows):
+        summary.append(f"{hits} pts paid in hits")
+    out += f"\n\n{esc(' · '.join(summary))}"
+    out += ("\n<i>Team value = squad at selling prices + bank, as FPL reports it. "
+            "“Buys” is how far the players each manager bought and still holds have moved "
+            "since they paid for them.</i>")
+    if unreachable:
+        out += f"\n<i>{unreachable} manager(s) couldn't be reached — FPL is flaky right now.</i>"
+    return out

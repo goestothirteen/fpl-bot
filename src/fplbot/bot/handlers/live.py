@@ -1,6 +1,8 @@
-"""The gameweek views: /live /left /diff /captains /bench /eo, and the inline
+"""The gameweek views: /live /left /diff /captains /bench /eo /squadvalue, and the inline
 button router that switches between them by editing one message."""
 from __future__ import annotations
+
+import asyncio
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -12,6 +14,7 @@ from ...db.session import session_scope
 from ...fpl.errors import UpstreamUnavailable
 from ...logging_conf import get_logger
 from ...services import analysis
+from ...services import value as value_svc
 from ...services.live import LiveEngine
 from ...services.models import GamePhase, LiveTable
 from ...services.parsing import parse_live, parse_players
@@ -24,6 +27,7 @@ from ..formatting import (
     render_live_cards,
     render_remaining_detail,
     render_season_table,
+    render_squad_values,
     render_wager_table,
 )
 from ..keyboards import live_views
@@ -31,7 +35,7 @@ from ..keyboards import live_views
 router = Router(name="live")
 log = get_logger(__name__)
 
-VIEWS = ("live", "season", "left", "edge", "caps", "diff", "bench", "wager")
+VIEWS = ("live", "season", "left", "edge", "caps", "diff", "bench", "wager", "value")
 
 
 async def _context(engine: LiveEngine, league_id: int, event: int):
@@ -45,6 +49,8 @@ async def _context(engine: LiveEngine, league_id: int, event: int):
 async def _render(view: str, engine: LiveEngine, table: LiveTable, players, live) -> str:  # noqa: ANN001
     if view == "wager":
         return await _wager_view(engine, table)
+    if view == "value":
+        return await _value_view(engine, table, players)
     if view == "season":
         return render_season_table(table)
     if view == "left":
@@ -75,6 +81,31 @@ async def _wager_view(engine: LiveEngine, table: LiveTable) -> str:
     if led is None:
         return "Couldn't build the ledger for this league."
     return render_wager_table(await ledger_svc.with_season(engine, led, total_events=38))
+
+
+async def _value_view(engine: LiveEngine, table: LiveTable, players) -> str:  # noqa: ANN001
+    """Team value per manager. Two small per-manager calls (history and
+    transfers), both cached by the client, fetched side by side."""
+
+    async def one(row):  # noqa: ANN001, ANN202
+        try:
+            history, transfers = await asyncio.gather(
+                engine.client.entry_history(row.entry_id),
+                engine.client.entry_transfers(row.entry_id),
+            )
+        except UpstreamUnavailable as exc:
+            log.warning("value.entry_failed", entry=row.entry_id, error=str(exc))
+            return None
+        return value_svc.squad_value(
+            row.entry_id, row.team_name, row.manager_name, history, transfers, players,
+            event=table.event, squad={p.element for p in row.picks} or None,
+        )
+
+    results = await asyncio.gather(*(one(r) for r in table.rows[:30]))
+    values = [v for v in results if v is not None]
+    return render_squad_values(
+        table.league_name, table.event, values, unreachable=len(results) - len(values)
+    )
 
 
 async def _resolve_league(message: Message, default_league, command_arg: str | None):  # noqa: ANN001
@@ -160,6 +191,14 @@ async def cmd_bench(message: Message, command: CommandObject, engine: LiveEngine
     league_id = await _resolve_league(message, default_league, command.args)
     if league_id:
         await _send_view(message, engine, league_id, "bench")
+
+
+@router.message(Command("squadvalue", "value", "sv"))
+async def cmd_squadvalue(message: Message, command: CommandObject, engine: LiveEngine,
+                         default_league) -> None:  # noqa: ANN001
+    league_id = await _resolve_league(message, default_league, command.args)
+    if league_id:
+        await _send_view(message, engine, league_id, "value")
 
 
 @router.message(Command("diff"))

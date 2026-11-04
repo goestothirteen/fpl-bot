@@ -35,6 +35,7 @@ COMMANDS = [
     ("diff", "Differentials, or head-to-head"),
     ("captains", "Captain spread and returns"),
     ("bench", "Points left on benches"),
+    ("squadvalue", "Team value, bank, transfers and hits"),
     ("chips", "Chips remaining this half"),
     ("deadline", "Next deadline countdown"),
     ("news", "Injury flags for owned players"),

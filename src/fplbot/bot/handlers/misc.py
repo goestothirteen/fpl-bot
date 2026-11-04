@@ -30,6 +30,7 @@ HELP = """<b>FPL mini-league bot</b>
 <b>Any time</b>
 /deadline — countdown in your timezone
 /chips — who has what left this half of the season
+/squadvalue — team value, bank, transfers, hits and best buys
 /news — injury flags, filtered to players your league owns
 /player &lt;name&gt; — player card with league ownership
 /fixtures [TEAM] — next five fixtures

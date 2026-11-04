@@ -37,6 +37,7 @@ league. Groups with several leagues linked get a picker.
 |---|---|
 | `/captains` | Captain armband spread across the league, with live captain points and how much each is up or down versus the most popular pick. |
 | `/bench` | Points rotting on benches, live. Reliably the funniest message of the weekend. |
+| `/squadvalue` | Team value per manager, richest first: squad at selling prices, bank, profit since GW1, this week's move, transfers made, hits paid, and how far the players they bought have risen or fallen since. Also the **💷 Value** button on `/live`. |
 | `/chips` | Who has played what, and — because chips reset at GW20 in 2026/27 — what each manager has left **in the current half**. |
 | `/eo <player>` | Effective ownership within the league (ownership + captaincy), the number that actually decides whether a haul helps or hurts you. |
 | `/swing` | Biggest rank movers since the gameweek started, and the current projected final table. |
